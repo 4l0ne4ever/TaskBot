@@ -7,7 +7,7 @@ ROOT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=str(ROOT_ENV_FILE), env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=str(ROOT_ENV_FILE), env_file_encoding="utf-8", extra="ignore")
 
     database_url: str
     redis_url: str
@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     pipeline_queue_name: str = "pipeline:jobs"
     sync_gmail_interval_minutes: int = 15
     sync_drive_interval_minutes: int = 30
+    frontend_url: str = "http://localhost:3000"
 
 
 @lru_cache

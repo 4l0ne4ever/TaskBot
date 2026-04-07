@@ -1,7 +1,7 @@
 import uuid
 
 from sqlalchemy import ARRAY, Boolean, Date, DateTime, ForeignKey, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -23,5 +23,6 @@ class Task(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="pending")
     calendar_event_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     notification_sent: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    previous_revision: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

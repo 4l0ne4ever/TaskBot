@@ -5,4 +5,4 @@ FastAPI service exposing:
 - task/sync/settings/upload endpoints
 - database access and migrations
 
-Runs independently from `agent-module`.
+Runs independently from `agent`.

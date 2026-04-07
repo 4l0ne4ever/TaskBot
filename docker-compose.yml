@@ -1,0 +1,167 @@
+# Full local / single-host stack: Postgres, Redis, backend API, agent worker, Next.js frontend.
+# Build context is the repository root (see backend/Dockerfile, agent/Dockerfile, frontend/Dockerfile).
+#
+# Host ports (override via .env): POSTGRES_PUBLISH_PORT, REDIS_PUBLISH_PORT, BACKEND_PUBLISH_PORT,
+# FRONTEND_PUBLISH_PORT — see .env.example.
+#
+# Inside the compose network, DATABASE_URL / REDIS_URL / BACKEND_API_BASE_URL are overridden below
+# so services talk to each other by service name (postgres, redis, backend).
+#
+# mcp-drive / mcp-gmail: in-repo HTTP bridges (same protocol as BaseMCPClient).
+# Calendar still uses external hosted MCP URL from .env.
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: taskbot-postgres
+    environment:
+      POSTGRES_USER: taskbot
+      POSTGRES_PASSWORD: taskbot
+      POSTGRES_DB: taskbot
+    ports:
+      - "${POSTGRES_PUBLISH_PORT:-5432}:5432"
+    volumes:
+      - taskbot_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskbot -d taskbot"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: taskbot-redis
+    ports:
+      - "${REDIS_PUBLISH_PORT:-6379}:6379"
+    volumes:
+      - taskbot_redisdata:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mcp-gmail:
+    build:
+      context: .
+      dockerfile: gmail-mcp-server/Dockerfile
+    container_name: taskbot-mcp-gmail
+    ports:
+      - "${MCP_GMAIL_PUBLISH_PORT:-8788}:8788"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8788/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  mcp-drive:
+    build:
+      context: .
+      dockerfile: drive-mcp-server/Dockerfile
+    container_name: taskbot-mcp-drive
+    ports:
+      - "${MCP_DRIVE_PUBLISH_PORT:-8787}:8787"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: taskbot-backend
+    ports:
+      - "${BACKEND_PUBLISH_PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://taskbot:taskbot@postgres:5432/taskbot
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - ./.env:/app/.env:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+
+  agent:
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    container_name: taskbot-agent
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://taskbot:taskbot@postgres:5432/taskbot
+      REDIS_URL: redis://redis:6379
+      BACKEND_API_BASE_URL: http://backend:8000
+      DRIVE_MCP_URL: http://mcp-drive:8787/mcp
+      GMAIL_MCP_URL: http://mcp-gmail:8788/mcp
+    volumes:
+      - ./.env:/app/.env:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mcp-drive:
+        condition: service_healthy
+      mcp-gmail:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: taskbot-frontend
+    ports:
+      - "${FRONTEND_PUBLISH_PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      WATCHPACK_POLLING: "true"
+    command: sh -c "npm install && npx next dev -H 0.0.0.0 -p 3000"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  taskbot_pgdata:
+  taskbot_redisdata:
+  frontend_node_modules:

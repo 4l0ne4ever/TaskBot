@@ -1,0 +1,15 @@
+.git
+.github
+.venv
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/*.pyc
+**/.mypy_cache
+.cursor
+*.md
+htmlcov
+.coverage
+dist
+build
+.DS_Store

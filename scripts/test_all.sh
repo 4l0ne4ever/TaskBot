@@ -9,8 +9,11 @@ if [[ ! -x "${PYTHON_BIN}" ]]; then
   exit 1
 fi
 
-echo "Running backend-api tests..."
-"${PYTHON_BIN}" -m pytest "${ROOT_DIR}/backend-api/tests" -c "${ROOT_DIR}/backend-api/pytest.ini" -q
+echo "Running backend tests..."
+"${PYTHON_BIN}" -m pytest "${ROOT_DIR}/backend/tests" -c "${ROOT_DIR}/backend/pytest.ini" -q
 
-echo "Running agent-module tests..."
-"${PYTHON_BIN}" -m pytest "${ROOT_DIR}/agent-module/tests" -c "${ROOT_DIR}/agent-module/pytest.ini" -q
+echo "Running agent tests..."
+"${PYTHON_BIN}" -m pytest "${ROOT_DIR}/agent/tests" -c "${ROOT_DIR}/agent/pytest.ini" -q
+
+echo "Running drive-mcp-server tests..."
+"${PYTHON_BIN}" -m pytest "${ROOT_DIR}/drive-mcp-server/tests" -c "${ROOT_DIR}/drive-mcp-server/pytest.ini" -q

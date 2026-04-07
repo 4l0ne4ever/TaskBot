@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
+# Legacy EC2 deploy: venv + systemd + PM2 (no Docker for the app).
+# Preferred path for Docker on server: scripts/deploy_stack.sh (see docs/dev.md).
 set -euo pipefail
 
 PROJECT_ROOT="/home/ubuntu/taskExtractor"
-BACKEND_DIR="$PROJECT_ROOT/backend-api"
-AGENT_DIR="$PROJECT_ROOT/agent-module"
+BACKEND_DIR="$PROJECT_ROOT/backend"
+AGENT_DIR="$PROJECT_ROOT/agent"
 FRONTEND_DIR="$PROJECT_ROOT/frontend"
 
 echo "==> Pull latest code"
@@ -28,10 +30,10 @@ npm run build
 pm2 restart taskbot-frontend || pm2 start npm --name taskbot-frontend -- start
 
 echo "==> Restart AWS-native services"
-sudo systemctl restart taskbot-backend-api
+sudo systemctl restart taskbot-backend
 sudo systemctl restart taskbot-agent-worker
 sudo systemctl restart nginx
 
 echo "==> Service status"
-sudo systemctl --no-pager --full status taskbot-backend-api taskbot-agent-worker nginx || true
+sudo systemctl --no-pager --full status taskbot-backend taskbot-agent-worker nginx || true
 pm2 status

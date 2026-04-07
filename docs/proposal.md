@@ -153,7 +153,7 @@ Structured Task Store (PostgreSQL)
 | AI / Orchestration | LangGraph 1.x                     | Multi-agent pipeline, state graph     |
 | LLM                | Groq (Llama 3.3 70B) API         | Extraction, normalization, validation |
 | MCP — Gmail        | Gmail MCP Server                  | Đọc inbox, thread, attachment         |
-| MCP — Drive        | Google Drive MCP Server           | Đọc file My Drive + Shared            |
+| MCP — Drive        | `drive-mcp-server` (HTTP bridge trong repo) + Google Drive API | Đọc file My Drive + Shared (token user) |
 | MCP — Calendar     | Google Calendar MCP Server        | Tạo event, reminder                   |
 | Backend API        | Python 3.11+, FastAPI             | REST API + auth + settings            |
 | Agent Module       | Python 3.11+, LangGraph Worker    | AI pipeline + scheduler execution      |
@@ -161,9 +161,11 @@ Structured Task Store (PostgreSQL)
 | Cache / Queue      | Redis                             | Job queue cho scheduler, dedup        |
 | File Parsing       | PyMuPDF (PDF), python-docx (DOCX) | Extract text từ file                  |
 | Frontend           | Next.js 14, React, TailwindCSS    | UI dashboard                          |
-| Auth               | OAuth 2.0 (Google)                | Xác thực, token management            |
+| Auth               | Clerk + OAuth 2.0 (Google)        | Session auth + Google data access     |
 | Cloud              | AWS EC2 (t3.small), S3            | Hosting, file storage                 |
-| Runtime/Deploy     | systemd + PM2 + Nginx             | AWS-native, không dùng Docker         |
+| Runtime/Deploy     | Docker Compose + Nginx (tuỳ chọn) | **Dev & triển khai mặc định:** `docker-compose.yml` (Postgres, Redis, backend, agent, frontend). EC2 có thể `scripts/deploy_stack.sh`; vẫn giữ lựa chọn legacy systemd + PM2 (`deploy.sh`) |
+
+**MCP:** Trong repo chỉ có **HTTP client** gọi MCP server bên ngoài (URL cấu hình `.env`); không bundle MCP server trong Docker. Gmail/Calendar có endpoint hosted; Drive cần server tự triển khai hoặc URL riêng.
 
 ### 5.2. Luồng đồng bộ tự động
 

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from urllib.parse import quote
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -25,11 +26,12 @@ async def auth_google() -> RedirectResponse:
     return RedirectResponse(url=build_google_auth_url())
 
 
-@router.get("/callback")
+@router.get("/callback", response_model=None)
 async def auth_callback(
     code: str | None = Query(default=None),
+    as_json: bool = Query(default=False, description="Return JSON (tests); browser OAuth omits this"),
     db: AsyncSession = Depends(get_db),
-) -> dict[str, str]:
+) -> RedirectResponse | dict[str, str]:
     if not code:
         raise HTTPException(status_code=400, detail="Missing code")
 
@@ -64,7 +66,11 @@ async def auth_callback(
         user.last_active_at = datetime.now(UTC)
 
     token = create_jwt(str(user.id))
-    return {"access_token": token, "token_type": "bearer"}
+    if as_json:
+        return {"access_token": token, "token_type": "bearer"}
+    base = settings.frontend_url.rstrip("/")
+    fragment = f"access_token={quote(token, safe='')}"
+    return RedirectResponse(url=f"{base}/auth/callback#{fragment}", status_code=302)
 
 
 @router.get("/me")

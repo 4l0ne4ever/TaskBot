@@ -13,6 +13,8 @@ TaskBot là AI bot tự động đọc email và tài liệu từ Gmail/Google D
 ### 1.2. User flow tổng quát
 
 ```
+User sign-in bằng Clerk
+        ↓
 User kết nối Google account (OAuth)
         ↓
 Bot bắt đầu polling Gmail + Drive theo chu kỳ
@@ -30,7 +32,7 @@ User xem và quản lý tasks trên UI
 
 | Actor                       | Mô tả                                                              |
 | --------------------------- | ------------------------------------------------------------------ |
-| **User**                    | Người dùng cuối — kết nối Google account, xem tasks, cấu hình sync |
+| **User**                    | Người dùng cuối — sign-in Clerk, kết nối Google account, xem tasks, cấu hình sync |
 | **Scheduler**               | Background job chạy polling định kỳ                                |
 | **AI Pipeline**             | LangGraph graph xử lý một document/email                           |
 | **MCP Servers**             | Gmail, Drive, Calendar — interface với Google APIs                 |
@@ -91,9 +93,10 @@ User xem và quản lý tasks trên UI
 
 ```
 taskExtractor/
-├── backend-api/      # FastAPI API + auth + DB layer
-├── agent-module/     # Scheduler + MCP clients + LangGraph pipeline
-├── frontend/         # Next.js dashboard
+├── backend/           # FastAPI API + auth + DB layer
+├── agent/             # Scheduler + MCP clients + LangGraph pipeline
+├── drive-mcp-server/  # HTTP MCP bridge → Google Drive API (Docker: mcp-drive)
+├── frontend/          # Next.js dashboard
 └── docs/
 ```
 
@@ -213,7 +216,7 @@ PipelineState = {
 
     # After ingestion node
     "cleaned_text": str,
-    "metadata": dict,                # sender, sent_at, subject, file_name...
+    "metadata": dict,                # sender, sent_at, subject, file_name; dedupe_group_id = Gmail threadId / Drive fileId → cập nhật task cũ khi re-sync (Phase 2.9)
 
     # After extraction node
     "extracted_tasks": list[dict],   # raw extraction, chưa normalize
@@ -345,6 +348,22 @@ Mỗi node có prompt riêng, không gộp chung:
 
 ## 5. MCP Integration
 
+### 5.0. MCP: ai là “server”, ai là “client”?
+
+TaskBot **agent** chỉ cần gọi một **HTTP endpoint** với cùng contract (`POST` JSON `tool_name` + `arguments`, header `Authorization: Bearer <Google access token của user>`) — xem `agent/app/mcp/base_client.py`.
+
+| Nguồn | “MCP server” ở đâu? | Trong repo TaskBot |
+| ----- | ------------------- | ------------------ |
+| **Gmail** | Server **hosted** (Anthropic), URL ví dụ `gmail.mcp.claude.com` | Chỉ **client** `GmailMCPClient` |
+| **Calendar** | Server **hosted**, URL ví dụ `gcal.mcp.claude.com` | Chỉ **client** `CalendarMCPClient` |
+| **Google Drive** | Không có bản hosted công khai tương đương → cần **HTTP bridge** tới Google Drive API v3 | **`drive-mcp-server/`** — FastAPI nhỏ trong monorepo; Docker service `mcp-drive` trong `docker-compose.yml` |
+
+**Vì sao trước đây chỉ thấy “client”?** Vì Gmail/Calendar được ủy quyền cho URL bên ngoài; phần Drive thiếu server tương thích protocol HTTP của `BaseMCPClient`, nên giờ đã **thêm `drive-mcp-server`** (đây chính là MCP server cho Drive trong phạm vi dự án). Đây **không** phải MCP kiểu stdio của Claude Desktop — đó là transport khác; stack TaskBot dùng **HTTP MCP** giống endpoint hosted của Anthropic.
+
+**Kiểm tra stack:** `./scripts/verify_stack.sh` (build + up + kiểm tra backend `/health`, Postgres, Redis, **mcp-drive** `/health`, agent, frontend). Nếu port host **5432/6379** bận, đặt `POSTGRES_PUBLISH_PORT` / `REDIS_PUBLISH_PORT` trong `.env` rồi chạy lại.
+
+**E2E với tài khoản Google thật (token tạm):** đặt `E2E_GOOGLE_ACCESS_TOKEN` (và tùy chọn `E2E_EXPECT_GOOGLE_EMAIL`) trong `.env`, chạy `python scripts/mcp_real_account_check.py`. Token lấy qua [OAuth 2.0 Playground](https://developers.google.com/oauthplayground) (chọn scope tương ứng) hoặc từ luồng OAuth của app; **chỉ test Gmail** thì dùng scope `gmail.readonly` và chạy `python scripts/mcp_real_account_check.py --gmail-only`. Thêm `--with-drive-download` để gọi `get_file_content` trên một PDF; `--calendar-create-smoke` để tạo một sự kiện thử qua hosted Calendar MCP (có thể xóa tay sau). Gmail/Calendar hosted không mở mã nguồn — script xác minh HTTP contract và quyền OAuth; Drive dùng bridge trong repo.
+
 ### 5.1. Gmail MCP
 
 **Scope cần thiết:** `gmail.readonly`, `gmail.labels`
@@ -368,7 +387,7 @@ Mỗi node có prompt riêng, không gộp chung:
 | Tool                | Khi nào dùng                | Input                                               | Output        |
 | ------------------- | --------------------------- | --------------------------------------------------- | ------------- |
 | `list_files`        | Polling — lấy files mới/sửa | `modifiedTime > last_sync, mimeType in [pdf, docx]` | list file_ids |
-| `get_file_content`  | Đọc nội dung file           | `file_id`                                           | file bytes    |
+| `get_file_content`  | Đọc nội dung file           | `file_id`                                           | JSON: `content_base64`, `mime_type`, `name` (Google Docs/Sheets/Slides → export PDF) |
 | `list_shared_files` | Lấy files được share        | `sharedWithMe=true, modifiedTime > last_sync`       | list file_ids |
 
 **Dedup strategy:** Lưu `pageToken` của Drive API. Kết hợp với `content_hash` để tránh process lại file không thay đổi.
@@ -382,7 +401,7 @@ Mỗi node có prompt riêng, không gộp chung:
 | Tool           | Khi nào dùng                       | Input                                 | Output        |
 | -------------- | ---------------------------------- | ------------------------------------- | ------------- |
 | `create_event` | Sau khi task có deadline được save | `title, date, description, reminders` | event_id      |
-| `update_event` | Khi user confirm/edit task         | `event_id, new_data`                  | updated event |
+| `update_event` | Khi user confirm/edit task         | `event_id, title, date, description` (HTTP body giống `create_event` + `event_id`) | updated event |
 | `delete_event` | Khi user dismiss task              | `event_id`                            | —             |
 
 ---
@@ -434,10 +453,10 @@ Worker lấy job từ Redis → chạy LangGraph pipeline
 ### 7.1. Auth
 
 ```
-GET  /auth/google              — redirect đến Google OAuth
-GET  /auth/callback            — nhận code, exchange token, tạo user session
-POST /auth/logout              — revoke token, clear session
-GET  /auth/me                  — thông tin user hiện tại
+GET  /auth/google              — redirect đến Google OAuth (sau khi đã login bằng Clerk)
+GET  /auth/callback            — nhận code, exchange token Google
+POST /auth/logout              — revoke Google token
+GET  /auth/me                  — thông tin user hiện tại (map với Clerk user)
 ```
 
 ### 7.2. Tasks
@@ -483,7 +502,7 @@ GET  /upload/:id/status        — kiểm tra trạng thái xử lý file upload
 
 ```
 /                     — redirect → /tasks hoặc /login
-/login                — Google OAuth button
+/login                — Clerk sign-in/sign-up
 /tasks                — Task list (main page)
 /tasks/:id            — Task detail + edit
 /conflicts            — Conflict list + resolve UI
@@ -509,9 +528,10 @@ GET  /upload/:id/status        — kiểm tra trạng thái xử lý file upload
 
 ## 9. Security Design
 
-### 9.1. OAuth token management
+### 9.1. Auth and OAuth token management
 
-- Access token và refresh token được lưu **encrypted** trong DB (AES-256)
+- Session auth dùng Clerk (frontend + backend token verification)
+- Access token và refresh token Google được lưu **encrypted** trong DB (AES-256)
 - Key encryption được lấy từ environment variable, không hardcode
 - Token không bao giờ được expose ra response API hoặc frontend
 - Refresh token tự động renew khi access token hết hạn (trong MCP calls)
@@ -524,41 +544,47 @@ GET  /upload/:id/status        — kiểm tra trạng thái xử lý file upload
 
 ### 9.3. Session management
 
-- Session token dạng JWT, expiry 7 ngày
-- Revoke toàn bộ sessions khi user disconnect Google account
+- Session lifecycle do Clerk quản lý
+- Disconnect Google account chỉ revoke token Google (không revoke Clerk session)
 - Rate limit: 60 requests/phút per user trên các endpoints quan trọng
 
 ---
 
 ## 10. Local Development Setup
 
-### 10.1. Services cần chạy
+### 10.1. Cách chính: Docker Compose (full stack)
 
+File `docker-compose.yml` ở root dựng **PostgreSQL, Redis, backend (FastAPI), agent worker, frontend (Next.js dev server)**. Secrets và biến app lấy từ `.env` ở root; compose **ghi đè** `DATABASE_URL`, `REDIS_URL`, `BACKEND_API_BASE_URL` để các container nói chuyện qua tên service (`postgres`, `redis`, `backend`).
+
+```bash
+cp .env.example .env   # điền đầy đủ
+./scripts/docker_infra.sh up
 ```
-PostgreSQL 15      — port 5432
-Redis              — port 6379
-FastAPI backend-api — port 8000
-Agent worker       — background service (systemd)
-Next.js frontend   — port 3000
-```
 
-Không dùng Docker. Môi trường dev/staging/prod chạy trực tiếp trên AWS EC2 bằng systemd/PM2.
+- API: `http://localhost:8000` (health: `/health`)
+- Frontend: `http://localhost:3000`
+- Postgres/Redis: map ra host theo cổng trong compose (mặc định `5432` / `6379`); nếu trùng port máy host, đặt `POSTGRES_PUBLISH_PORT` / `REDIS_PUBLISH_PORT` trong `.env`.
 
-Python dependencies dùng **một môi trường ảo chung ở root project**:
+Chỉ chạy DB + Redis: `./scripts/docker_infra.sh up-db` rồi chạy backend/agent/frontend trên host với `.venv` (xem 10.4).
+
+### 10.1.1. S3 bucket — không cần tạo “folder” trước
+
+- Chỉ cần **bucket rỗng** đúng tên và region trong `AWS_S3_BUCKET` / `AWS_REGION`.
+- Object key do app tạo khi upload: `{user_uuid}/{upload_id}.{ext}` (prefix giống thư mục; S3 không bắt buộc tạo prefix trước).
+
+### 10.2. Tests và tooling trên máy dev (ngoài container)
+
+Python dependencies dùng **một venv ở root** để chạy pytest, Alembic thủ công, script validate:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-Test command chuẩn từ root (không còn conflict import `app` giữa 2 module):
-
-```bash
 ./scripts/test_all.sh
+./.venv/bin/python scripts/validate_env.py --dev
 ```
 
-### 10.2. Environment variables cần thiết
+### 10.3. Environment variables cần thiết
 
 ```
 # Google OAuth
@@ -566,27 +592,42 @@ GOOGLE_CLIENT_ID
 GOOGLE_CLIENT_SECRET
 GOOGLE_REDIRECT_URI
 
+# Clerk
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY (Next.js) hoặc VITE_CLERK_PUBLISHABLE_KEY (Vite)
+CLERK_SECRET_KEY
+
 # LLM
-GEMINI_API_KEY
+GROQ_API_KEY
 
 # Database
-DATABASE_URL           — postgresql://user:pass@localhost:5432/taskbot
+DATABASE_URL           — postgresql+asyncpg://… (Compose overrides for in-network hosts)
 
 # Redis
-REDIS_URL              — redis://localhost:6379
+REDIS_URL              — redis://… 
+
+# Agent → Backend (host-only dev)
+BACKEND_API_BASE_URL
 
 # Security
 JWT_SECRET
 ENCRYPTION_KEY         — cho token storage
 
 # App
-SYNC_GMAIL_INTERVAL    — minutes, default 15
-SYNC_DRIVE_INTERVAL    — minutes, default 30
+SYNC_GMAIL_INTERVAL_MINUTES    — minutes, default 15
+SYNC_DRIVE_INTERVAL_MINUTES    — minutes, default 30
 ```
 
-### 10.3. Database migrations
+### 10.4. Database migrations
 
-Dùng Alembic (Python). Thứ tự tạo bảng:
+Trong Docker, **backend container** chạy `alembic upgrade head` trước khi khởi động uvicorn (`backend/docker-entrypoint.sh`).
+
+Chạy tay trên host (khi chỉ dùng `up-db` hoặc debug):
+
+```bash
+cd backend && source ../.venv/bin/activate && alembic upgrade head
+```
+
+Thứ tự migration (Alembic):
 
 1. `users`
 2. `sync_states`
@@ -597,35 +638,48 @@ Dùng Alembic (Python). Thứ tự tạo bảng:
 
 ---
 
-## 11. Deployment (AWS EC2)
+## 11. Deployment
 
-### 11.1. Services trên EC2 (AWS-native, non-Docker)
+### 11.1. EC2 với Docker Compose (khuyến nghị theo plan hiện tại)
+
+Trên server cài Docker + Docker Compose plugin. Clone repo, đặt `.env` production, rồi:
+
+```bash
+export TASKBOT_ROOT=/home/ubuntu/taskExtractor   # tuỳ đường dẫn
+./scripts/deploy_stack.sh
+```
+
+- Cùng `docker-compose.yml` như local; có thể đặt Nginx trên host làm reverse proxy tới `localhost:3000` / `localhost:8000` hoặc chỉ publish `80/443` qua container khác (tùy cấu hình bảo mật).
+- MCP server (đặc biệt Drive) vẫn **không** nằm trong compose — chạy riêng hoặc URL hosted.
+
+### 11.2. EC2 không Docker (legacy)
+
+Script `deploy.sh` cập nhật venv, Alembic, PM2 và **systemd** (`taskbot-backend`, `taskbot-agent-worker`). Dùng khi không container hoá app.
 
 ```
 System services:
   - postgresql-15
   - redis-server
-  - taskbot-backend-api    (FastAPI, systemd, :8000)
+  - taskbot-backend    (FastAPI, systemd, :8000)
   - taskbot-agent-worker   (APScheduler + LangGraph, systemd)
   - taskbot-frontend       (Next.js, PM2, :3000)
 
 Nginx (reverse proxy):
   - / → frontend :3000
-  - /api → backend-api :8000
+  - /api → backend :8000
 ```
 
-### 11.2. S3
+### 11.3. S3
 
 - Bucket: `taskbot-uploads-{env}`
 - Prefix: `{user_id}/{upload_id}.{ext}`
 - Lifecycle rule: xóa file sau 30 ngày nếu đã processed
 
-### 11.3. Process restart
+### 11.4. Process restart
 
-- systemd restart policy: `always` cho `taskbot-backend-api` và `taskbot-agent-worker`
-- PM2 auto-start cho `taskbot-frontend`
-- Scheduler tự resume jobs từ Redis khi restart
-- Sync state trong DB đảm bảo không bị duplicate khi restart
+- **Docker:** `docker compose restart backend agent frontend` (hoặc `docker compose up -d --build` sau khi `git pull`).
+- **Legacy systemd/PM2:** restart policy `always` cho `taskbot-backend` và `taskbot-agent-worker`; PM2 cho frontend.
+- Scheduler tự resume jobs từ Redis khi restart; sync state trong DB giảm duplicate.
 
 ---
 

@@ -3,8 +3,8 @@
 .env
 venv/
 /.venv/
-backend-api/.venv/
-agent-module/.venv/
+backend/.venv/
+agent/.venv/
 node_modules/
 __pycache__/
 *.egg-info/
@@ -22,3 +22,4 @@ htmlcov/
 dist/
 build/
 .DS_Store
+.next/
