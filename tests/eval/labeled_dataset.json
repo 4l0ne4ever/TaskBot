@@ -581,7 +581,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Đỗ Văn Hải, Email 2: reassigned to Lê Minh Đức"
+    "annotation_notes": "Email 1: Đỗ Văn Hải, Email 2: reassigned to Lê Minh Đức",
+    "eval_existing_tasks": [
+      {
+        "title": "Wireframe trang chủ",
+        "assignee": "Đỗ Văn Hải",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-157-email1",
+        "id": "eval-fixture-ac-157"
+      }
+    ]
   },
   {
     "id": "eval-106",
@@ -1137,7 +1147,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Friday (2026-04-03), Email 2: tomorrow (2026-04-02)"
+    "annotation_notes": "Email 1: Friday (2026-04-03), Email 2: tomorrow (2026-04-02)",
+    "eval_existing_tasks": [
+      {
+        "title": "Tài liệu thiết kế",
+        "assignee": "Ngô Thanh Tùng",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-email-1",
+        "id": "eval-fixture-dc-138-email1"
+      }
+    ]
   },
   {
     "id": "eval-054",
@@ -1200,7 +1220,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-05)"
+    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-05)",
+    "eval_existing_tasks": [
+      {
+        "title": "Partnership proposal",
+        "assignee": "Bob",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-141-email1",
+        "id": "eval-fixture-dc-141"
+      }
+    ]
   },
   {
     "id": "nn-245",
@@ -1261,7 +1291,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Lê Minh Đức, Email 2: reassigned to Đặng Tuấn Kiệt"
+    "annotation_notes": "Email 1: Lê Minh Đức, Email 2: reassigned to Đặng Tuấn Kiệt",
+    "eval_existing_tasks": [
+      {
+        "title": "Bản đánh giá nhân sự",
+        "assignee": "Lê Minh Đức",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-153-email1",
+        "id": "eval-fixture-ac-153"
+      }
+    ]
   },
   {
     "id": "eval-064",
@@ -1534,7 +1574,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-07)"
+    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-07)",
+    "eval_existing_tasks": [
+      {
+        "title": "Hợp đồng NDA",
+        "assignee": "Nguyễn",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-143-email1",
+        "id": "eval-fixture-dc-143"
+      }
+    ]
   },
   {
     "id": "ac-156",
@@ -1566,7 +1616,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Phan Đức Anh, Email 2: reassigned to Phạm Hương"
+    "annotation_notes": "Email 1: Phan Đức Anh, Email 2: reassigned to Phạm Hương",
+    "eval_existing_tasks": [
+      {
+        "title": "Báo cáo tháng 3",
+        "assignee": "Phan Đức Anh",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-156-email1",
+        "id": "eval-fixture-ac-156"
+      }
+    ]
   },
   {
     "id": "mx-184",
@@ -1755,7 +1815,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Friday (2026-04-03), Email 2: tomorrow (2026-04-03)"
+    "annotation_notes": "Email 1: Friday (2026-04-03), Email 2: tomorrow (2026-04-03)",
+    "eval_existing_tasks": [
+      {
+        "title": "Test results",
+        "assignee": "Karen",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-139-email1",
+        "id": "eval-fixture-dc-139"
+      }
+    ]
   },
   {
     "id": "eval-003",
@@ -2306,7 +2376,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Friday (2026-04-03), Email 2: tomorrow (2026-04-04)"
+    "annotation_notes": "Email 1: Friday (2026-04-03), Email 2: tomorrow (2026-04-04)",
+    "eval_existing_tasks": [
+      {
+        "title": "Wireframe trang chủ",
+        "assignee": "Phan Đức Anh",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-140-email1",
+        "id": "eval-fixture-dc-140"
+      }
+    ]
   },
   {
     "id": "ac-154",
@@ -2338,7 +2418,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Dương Thị Mai, Email 2: reassigned to Hoàng Nam"
+    "annotation_notes": "Email 1: Dương Thị Mai, Email 2: reassigned to Hoàng Nam",
+    "eval_existing_tasks": [
+      {
+        "title": "Kết quả kiểm thử",
+        "assignee": "Dương Thị Mai",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-154-email1",
+        "id": "eval-fixture-ac-154"
+      }
+    ]
   },
   {
     "id": "eval-085",
@@ -2566,7 +2656,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-06)"
+    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-06)",
+    "eval_existing_tasks": [
+      {
+        "title": "Tài liệu API docs",
+        "assignee": "Trần Thị Bình",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-142-email1",
+        "id": "eval-fixture-dc-142"
+      }
+    ]
   },
   {
     "id": "eval-009",
@@ -3076,7 +3176,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Lý Hoàng Long, Email 2: reassigned to Đỗ Văn Hải"
+    "annotation_notes": "Email 1: Lý Hoàng Long, Email 2: reassigned to Đỗ Văn Hải",
+    "eval_existing_tasks": [
+      {
+        "title": "Wireframe trang chủ",
+        "assignee": "Lý Hoàng Long",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-158-email1",
+        "id": "eval-fixture-ac-158"
+      }
+    ]
   },
   {
     "id": "nl-196",
@@ -3138,7 +3248,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Friday (2026-04-03), Email 2: tomorrow (2026-03-31)"
+    "annotation_notes": "Email 1: Friday (2026-04-03), Email 2: tomorrow (2026-03-31)",
+    "eval_existing_tasks": [
+      {
+        "title": "Meeting minutes",
+        "assignee": "Jack",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-150-email1",
+        "id": "eval-fixture-dc-150"
+      }
+    ]
   },
   {
     "id": "eval-032",
@@ -3767,7 +3887,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-10)"
+    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-10)",
+    "eval_existing_tasks": [
+      {
+        "title": "Bảng số liệu tài chính",
+        "assignee": "Nguyễn Văn An",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-146-email1",
+        "id": "eval-fixture-dc-146"
+      }
+    ]
   },
   {
     "id": "eval-099",
@@ -4212,7 +4342,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Diana, Email 2: reassigned to Olivia"
+    "annotation_notes": "Email 1: Diana, Email 2: reassigned to Olivia",
+    "eval_existing_tasks": [
+      {
+        "title": "Design document",
+        "assignee": "Diana",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-152-email1",
+        "id": "eval-fixture-ac-152"
+      }
+    ]
   },
   {
     "id": "eval-071",
@@ -4502,7 +4642,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Nguyễn Văn An, Email 2: reassigned to Hoàng Nam"
+    "annotation_notes": "Email 1: Nguyễn Văn An, Email 2: reassigned to Hoàng Nam",
+    "eval_existing_tasks": [
+      {
+        "title": "Bản đánh giá nhân sự",
+        "assignee": "Nguyễn Văn An",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-160-email1",
+        "id": "eval-fixture-ac-160"
+      }
+    ]
   },
   {
     "id": "nl-198",
@@ -4616,7 +4766,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Friday (2026-04-17), Email 2: tomorrow (2026-04-13)"
+    "annotation_notes": "Email 1: Friday (2026-04-17), Email 2: tomorrow (2026-04-13)",
+    "eval_existing_tasks": [
+      {
+        "title": "Bảng số liệu tài chính",
+        "assignee": "Lý",
+        "deadline": "2026-04-17",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-149-email1",
+        "id": "eval-fixture-dc-149"
+      }
+    ]
   },
   {
     "id": "dc-145",
@@ -4648,7 +4808,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-09)"
+    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-09)",
+    "eval_existing_tasks": [
+      {
+        "title": "Tài liệu API docs",
+        "assignee": "Hồ",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-145-email1",
+        "id": "eval-fixture-dc-145"
+      }
+    ]
   },
   {
     "id": "eval-119",
@@ -4888,7 +5058,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Paul, Email 2: reassigned to Henry"
+    "annotation_notes": "Email 1: Paul, Email 2: reassigned to Henry",
+    "eval_existing_tasks": [
+      {
+        "title": "Partnership proposal",
+        "assignee": "Paul",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-155-email1",
+        "id": "eval-fixture-ac-155"
+      }
+    ]
   },
   {
     "id": "nn-250",
@@ -5252,7 +5432,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Friday (2026-04-03), Email 2: tomorrow (2026-03-31)"
+    "annotation_notes": "Email 1: Friday (2026-04-03), Email 2: tomorrow (2026-03-31)",
+    "eval_existing_tasks": [
+      {
+        "title": "March report",
+        "assignee": "Frank",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-136-email1",
+        "id": "eval-fixture-dc-136"
+      }
+    ]
   },
   {
     "id": "tn-219",
@@ -5650,7 +5840,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Phan Đức Anh, Email 2: reassigned to Trần Thị Bình"
+    "annotation_notes": "Email 1: Phan Đức Anh, Email 2: reassigned to Trần Thị Bình",
+    "eval_existing_tasks": [
+      {
+        "title": "Bảng số liệu tài chính",
+        "assignee": "Phan Đức Anh",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-151-email1",
+        "id": "eval-fixture-ac-151"
+      }
+    ]
   },
   {
     "id": "fw-208",
@@ -5877,7 +6077,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Đỗ Văn Hải, Email 2: reassigned to Lý Hoàng Long"
+    "annotation_notes": "Email 1: Đỗ Văn Hải, Email 2: reassigned to Lý Hoàng Long",
+    "eval_existing_tasks": [
+      {
+        "title": "Biên bản họp",
+        "assignee": "Đỗ Văn Hải",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-159-email1",
+        "id": "eval-fixture-ac-159"
+      }
+    ]
   },
   {
     "id": "fw-206",
@@ -6191,7 +6401,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-11)"
+    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-11)",
+    "eval_existing_tasks": [
+      {
+        "title": "Proposal hợp tác",
+        "assignee": "Hoàng Nam",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-147-email1",
+        "id": "eval-fixture-dc-147"
+      }
+    ]
   },
   {
     "id": "eval-110",
@@ -6248,7 +6468,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Friday (2026-04-17), Email 2: tomorrow (2026-04-12)"
+    "annotation_notes": "Email 1: Friday (2026-04-17), Email 2: tomorrow (2026-04-12)",
+    "eval_existing_tasks": [
+      {
+        "title": "Design document",
+        "assignee": "Paul",
+        "deadline": "2026-04-17",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-148-email1",
+        "id": "eval-fixture-dc-148"
+      }
+    ]
   },
   {
     "id": "eval-081",
@@ -6678,7 +6908,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-08)"
+    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-08)",
+    "eval_existing_tasks": [
+      {
+        "title": "Test results",
+        "assignee": "Olivia",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-144-email1",
+        "id": "eval-fixture-dc-144"
+      }
+    ]
   },
   {
     "id": "eval-129",
@@ -6787,7 +7027,17 @@
       ],
       "missing_fields": []
     },
-    "annotation_notes": "Email 1: Friday (2026-04-03), Email 2: tomorrow (2026-04-01)"
+    "annotation_notes": "Email 1: Friday (2026-04-03), Email 2: tomorrow (2026-04-01)",
+    "eval_existing_tasks": [
+      {
+        "title": "Proposal hợp tác",
+        "assignee": "Trần",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-137-email1",
+        "id": "eval-fixture-dc-137"
+      }
+    ]
   },
   {
     "id": "eval-098",

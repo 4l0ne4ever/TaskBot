@@ -1,0 +1,38 @@
+{
+  "status": "complete",
+  "sweep_batch_utc": "20260502T203306Z",
+  "pipeline_policy_version": "v1",
+  "dataset": "/Users/duongcongthuyet/Downloads/workspace/AI /taskExtractor/tests/eval/labeled_dataset.json",
+  "limit": 35,
+  "cost_fp_no_task": 1.0,
+  "cost_fn_task": 1.0,
+  "scoring": "maximize title_f1 - cost_fp_no_task * false_answer_empty_gt; tie-break title_f1 then fully_correct_pct",
+  "chosen": {
+    "confidence_abstain_threshold": 0.65,
+    "confidence_uncertain_threshold": 0.76,
+    "metrics_snapshot": {
+      "abstain": 0.65,
+      "uncertain": 0.76,
+      "title_f1": 0.9647,
+      "deadline_exact": 0.881,
+      "fully_correct_pct": 85.71,
+      "correct_abstain_empty_gt": 1.0,
+      "false_answer_empty_gt": 0.0,
+      "ece": 0.1049,
+      "fallback_calls": 0,
+      "samples_using_fallback": 0,
+      "rate_limited_calls": 0,
+      "strict_primary_mode": false,
+      "runtime_error_count": 1,
+      "runtime_error_kinds": "other=1",
+      "aborted_early": false,
+      "abort_reason": "",
+      "samples_completed": 35,
+      "samples_requested": 35,
+      "contaminated": false,
+      "contaminated_reason": ""
+    }
+  },
+  "csv_path": "tests/eval/policy_freeze/sweep_online_focus.csv",
+  "checkpoint_path": "tests/eval/policy_freeze/sweep_online_focus_checkpoint.json"
+}

@@ -10,6 +10,7 @@ from app.models.pipeline_run import PipelineRun
 from app.models.source_document import SourceDocument
 from app.models.task import Task
 from app.pipeline.state import PipelineState
+from app.services.assignee_resolver import get_default_resolver
 from app.services.task_dedupe import pick_task_to_reuse
 
 
@@ -128,6 +129,8 @@ async def async_save_tasks(state: PipelineState) -> dict:
                 reused_ids: set[uuid.UUID] = set()
                 title_to_new_id: dict[str, uuid.UUID] = {}
                 for vt in validated_tasks:
+                    if bool(vt.get("abstained")):
+                        continue
                     title = vt.get("title")
                     if not isinstance(title, str) or not title.strip():
                         continue
@@ -139,16 +142,22 @@ async def async_save_tasks(state: PipelineState) -> dict:
                         reused_ids.add(best.id)
                         best.previous_revision = {
                             "title": best.title,
+                            "description": best.description,
                             "assignee": best.assignee,
                             "deadline": best.deadline.isoformat() if best.deadline else None,
+                            "deadline_v2": best.deadline_v2,
                             "priority": best.priority,
+                            "uncertainty": best.uncertainty,
                             "source_doc_id": str(best.source_doc_id) if best.source_doc_id else None,
                             "updated_at": best.updated_at.isoformat() if hasattr(best.updated_at, "isoformat") else str(best.updated_at),
                         }
                         best.title = tkey
+                        best.description = vt.get("description") if isinstance(vt.get("description"), str) else None
                         best.assignee = vt.get("assignee") if isinstance(vt.get("assignee"), str) else None
                         best.deadline = _parse_deadline(vt.get("deadline"))
+                        best.deadline_v2 = vt.get("deadline_v2") if isinstance(vt.get("deadline_v2"), dict) else None
                         best.priority = vt.get("priority") if isinstance(vt.get("priority"), str) else None
+                        best.uncertainty = vt.get("uncertainty") if isinstance(vt.get("uncertainty"), dict) else None
                         best.missing_fields = list(vt.get("missing_fields") or [])
                         best.source_doc_id = source_doc_uuid
                         best.updated_at = datetime.now(UTC)
@@ -161,9 +170,12 @@ async def async_save_tasks(state: PipelineState) -> dict:
                             user_id=user_uuid,
                             source_doc_id=source_doc_uuid,
                             title=tkey,
+                            description=vt.get("description") if isinstance(vt.get("description"), str) else None,
                             assignee=vt.get("assignee") if isinstance(vt.get("assignee"), str) else None,
                             deadline=_parse_deadline(vt.get("deadline")),
+                            deadline_v2=vt.get("deadline_v2") if isinstance(vt.get("deadline_v2"), dict) else None,
                             priority=vt.get("priority") if isinstance(vt.get("priority"), str) else None,
+                            uncertainty=vt.get("uncertainty") if isinstance(vt.get("uncertainty"), dict) else None,
                             missing_fields=list(vt.get("missing_fields") or []),
                         )
                         session.add(task)
@@ -222,6 +234,22 @@ async def async_save_tasks(state: PipelineState) -> dict:
         except Exception as exc:
             errors.append(f"save_tasks failed: {exc}")
             return {"saved_task_ids": [], "errors": errors}
+
+    # Q-05: after a successful persist, seed the user's canonical-by-data pool
+    # with the confirmed assignees. We learn AFTER the transaction commits so
+    # that a rolled-back save never pollutes the pool with data that was never
+    # stored. Abstained tasks are skipped (they were filtered above).
+    try:
+        resolver = get_default_resolver()
+        for vt in validated_tasks:
+            if bool(vt.get("abstained")):
+                continue
+            canonical = vt.get("assignee_canonical")
+            if not isinstance(canonical, str) or not canonical.strip():
+                continue
+            resolver.learn(str(user_uuid), canonical)
+    except Exception as exc:
+        errors.append(f"save_tasks: assignee_resolver.learn failed: {exc}")
 
     return {"saved_task_ids": saved_task_ids, "errors": errors}
 

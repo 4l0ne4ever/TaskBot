@@ -120,6 +120,7 @@ async def mcp_invoke(request: Request) -> dict[str, Any]:
             result: dict[str, Any] = {
                 "id": msg.get("id"),
                 "threadId": msg.get("threadId"),
+                "internalDate": msg.get("internalDate"),
                 "snippet": msg.get("snippet"),
                 "subject": _extract_header(msg_headers, "Subject"),
                 "from": _extract_header(msg_headers, "From"),

@@ -5,7 +5,9 @@ from datetime import datetime
 from difflib import SequenceMatcher
 from typing import Any
 
-UPDATE_TITLE_MATCH_THRESHOLD = 0.85
+from app.config import get_settings
+
+settings = get_settings()
 
 
 def title_similarity(a: str, b: str) -> float:
@@ -17,8 +19,10 @@ def pick_task_to_reuse(
     new_title: str,
     *,
     excluded_ids: set[uuid.UUID],
-    threshold: float = UPDATE_TITLE_MATCH_THRESHOLD,
+    threshold: float | None = None,
 ) -> Any | None:
+    if threshold is None:
+        threshold = settings.task_reuse_similarity_threshold
     """Pick one ORM Task from candidates to update, or None to insert a new row."""
     title = new_title.strip()
     if not title:

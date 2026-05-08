@@ -1,9 +1,30 @@
+export interface TaskDeadlineV2 {
+  type: "exact" | "range" | "relative" | "none" | null;
+  iso: string | null;
+  start: string | null;
+  end: string | null;
+  text: string | null;
+  resolved_from: string | null;
+  confidence: number | null;
+  source: string | null;
+  is_ambiguous: boolean | null;
+  suggested_iso?: string | null;
+}
+
+export interface TaskUncertainty {
+  type: "ambiguous" | "missing" | "conflict" | null;
+  reason: string | null;
+}
+
 export interface Task {
   id: string;
   title: string;
+  description: string | null;
   assignee: string | null;
   deadline: string | null;
+  deadline_v2: TaskDeadlineV2 | null;
   priority: string | null;
+  uncertainty: TaskUncertainty | null;
   status: string;
   missing_fields: string[] | null;
   calendar_event_id: string | null;
@@ -47,6 +68,7 @@ export interface PipelineRunRow {
 export interface SettingsPayload {
   gmail_interval: number;
   drive_interval: number;
+  sync_profile: "strict_work" | "balanced" | "broad";
   google_connected: boolean;
 }
 

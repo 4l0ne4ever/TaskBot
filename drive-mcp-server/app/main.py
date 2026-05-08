@@ -89,12 +89,13 @@ async def mcp_invoke(request: Request) -> dict[str, Any]:
         if tool_name == "list_shared_files":
             q = str(args.get("query") or "")
             fields = _drive_fields_param(args.get("fields"))
+            page_size = int(args.get("page_size") or 100)
             resp = await client.get(
                 DRIVE_FILES,
                 params={
                     "q": q,
                     "fields": fields,
-                    "pageSize": 100,
+                    "pageSize": page_size,
                     "supportsAllDrives": "true",
                     "includeItemsFromAllDrives": "true",
                 },

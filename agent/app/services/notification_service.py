@@ -52,6 +52,7 @@ async def async_dispatch_notifications(state: PipelineState) -> dict:
         return {"notifications_sent": notifications_sent, "errors": errors}
 
     calendar = CalendarMCPClient(access_token=access_token)
+    calendar_blocked = False
 
     async with AsyncSessionLocal() as session:
         async with session.begin():
@@ -63,6 +64,9 @@ async def async_dispatch_notifications(state: PipelineState) -> dict:
                 date_iso = _to_iso_date(task.deadline)
                 if not date_iso:
                     notifications_sent.append({"task_id": str(task.id), "type": "in_app_reminder"})
+                    continue
+                if calendar_blocked:
+                    notifications_sent.append({"task_id": str(task.id), "type": "calendar_skipped"})
                     continue
                 try:
                     if task.calendar_event_id:
@@ -85,6 +89,8 @@ async def async_dispatch_notifications(state: PipelineState) -> dict:
                     notifications_sent.append({"task_id": str(task.id), "type": "calendar", "event_id": event_id})
                 except Exception as exc:  # keep pipeline alive
                     errors.append(f"dispatch_notifications failed for task {task.id}: {exc}")
+                    if "403" in str(exc):
+                        calendar_blocked = True
 
     return {"notifications_sent": notifications_sent, "errors": errors}
 

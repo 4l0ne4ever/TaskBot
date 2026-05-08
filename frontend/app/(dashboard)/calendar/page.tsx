@@ -195,6 +195,7 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [modalDate, setModalDate] = useState<string | null>(null);
   const [modalEvent, setModalEvent] = useState<CalendarEvent | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>(fmt(new Date()));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -287,6 +288,19 @@ export default function CalendarPage() {
       .slice(0, 8);
   }, [events]);
 
+  const selectedDayEvents = useMemo(
+    () =>
+      (eventsByDate[selectedDate] ?? []).slice().sort((a, b) => {
+        return (a.title ?? "").localeCompare(b.title ?? "");
+      }),
+    [eventsByDate, selectedDate],
+  );
+
+  const selectedDateForGoogle = useMemo(() => {
+    const [y, m, d] = selectedDate.split("-");
+    return `${y}/${m}/${d}`;
+  }, [selectedDate]);
+
   return (
     <div className="space-y-6 max-w-6xl">
       {/* Header */}
@@ -307,16 +321,26 @@ export default function CalendarPage() {
             Today
           </button>
         </div>
-        <button
-          type="button"
-          onClick={() => openCreate(fmt(new Date()))}
-          className="inline-flex items-center gap-2 rounded-lg bg-[var(--accent)] text-white px-4 py-2 text-sm hover:opacity-90 transition-opacity"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-          </svg>
-          New Event
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            href={`https://calendar.google.com/calendar/u/0/r/day/${selectedDateForGoogle}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-4 py-2 text-sm hover:bg-[var(--card-hover)] transition-colors"
+          >
+            Google Calendar
+          </a>
+          <button
+            type="button"
+            onClick={() => openCreate(selectedDate)}
+            className="inline-flex items-center gap-2 rounded-lg bg-[var(--accent)] text-white px-4 py-2 text-sm hover:opacity-90 transition-opacity"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            New Event
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -342,7 +366,7 @@ export default function CalendarPage() {
                       "min-h-[100px] border-b border-r border-[var(--border)] p-1.5 cursor-pointer transition-colors hover:bg-[var(--card-hover)]",
                       !inMonth && "opacity-40",
                     )}
-                    onClick={() => openCreate(dateStr)}
+                    onClick={() => setSelectedDate(dateStr)}
                   >
                     <div className={cn(
                       "text-xs font-medium mb-1 w-6 h-6 flex items-center justify-center rounded-full",
@@ -374,6 +398,69 @@ export default function CalendarPage() {
                 );
               })}
             </div>
+          </div>
+
+          <div className="mt-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold">
+                {new Date(`${selectedDate}T00:00:00`).toLocaleDateString("en-US", {
+                  weekday: "long",
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}{" "}
+                ({selectedDayEvents.length})
+              </h3>
+              <button
+                type="button"
+                onClick={() => openCreate(selectedDate)}
+                className="text-xs px-3 py-1.5 rounded-lg border border-[var(--border)] hover:bg-[var(--card-hover)] transition-colors"
+              >
+                Add task
+              </button>
+            </div>
+            {selectedDayEvents.length === 0 ? (
+              <p className="text-xs text-[var(--muted)]">No tasks for this day.</p>
+            ) : (
+              <div className="space-y-2">
+                {selectedDayEvents.map((ev) => (
+                  <div key={ev.id} className="rounded-lg border border-[var(--border)] p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{ev.title}</p>
+                        <p className="text-xs text-[var(--muted)]">
+                          {ev.assignee || "Unassigned"} · {ev.status}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(ev)}
+                          className="text-xs px-2 py-1 rounded border border-[var(--border)] hover:bg-[var(--card-hover)]"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await api.calendar.delete(ev.id);
+                              toast.success("Event deleted");
+                              void load();
+                            } catch (e: unknown) {
+                              toast.error(e instanceof Error ? e.message : "Failed to delete");
+                            }
+                          }}
+                          className="text-xs px-2 py-1 rounded border border-red-500/30 text-red-500 hover:bg-red-500/10"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

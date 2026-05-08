@@ -1,0 +1,116 @@
+EVAL_RUN_ID=20260506T211049Z-8b727001
+LANGSMITH_SESSION_NAME=eval-pipeline-20260506T211049Z-8b727001 (filter runs in LangSmith)
+  [1/250] processing mx-189 (edge_mixed_lang)...
+EVAL_STRICT_PRIMARY_MODEL_ONLY: strict Groq primary, no Gemini fallback, model=openai/gpt-oss-120b
+  [10/250] processing eval-070 (email_no_task)...
+  [20/250] processing eval-031 (email_multi_task)...
+  ... batch cooldown 45.0s after 20/250 samples (rate-limit hygiene)
+  [30/250] processing fw-205 (edge_forwarded)...
+  [40/250] processing eval-025 (email_simple)...
+  ... batch cooldown 45.0s after 40/250 samples (rate-limit hygiene)
+  [50/250] processing nn-248 (edge_nickname)...
+  [60/250] processing eval-126 (doc_meeting_notes)...
+  ... batch cooldown 45.0s after 60/250 samples (rate-limit hygiene)
+  [70/250] processing eval-076 (email_no_task)...
+    pipeline daily quota (TPD/RPD) hit — failing fast
+  ABORT: daily quota (TPD/RPD) exhausted; will write partial JSON to --output then exit.
+  Wrote partial JSON (72/250 samples) -> tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250.json
+Method: pipeline  Model: openai/gpt-oss-120b  {'fallback_calls': 0, 'primary_calls_total': 120, 'fallback_calls_per_sample_total': 0, 'rate_limited_calls_total': 0, 'samples_using_fallback': 0, 'samples_total_with_provenance': 70, 'contaminated': False, 'model_mix': {'openai/gpt-oss-120b': 120}, 'strict_primary_mode': True}
+Samples: 72  Runtime errors: 2
+Title F1:       0.9682  (P=0.9870 R=0.9500)
+Assignee F1:    0.9600
+Deadline Exact: 0.8649
+Deadline Near:  0.8919
+Conflict F1:    0.8333
+Abstention: correct_abstain(empty GT)=1.0 false_answer(empty GT)=0.0 false_abstain(nonempty GT)=0.0508
+Calibration ECE: 0.1132  (confidence pairs: 76)
+Fully correct:  59/72 (81.9%)
+
+Top error types:
+  wrong_deadline: 7
+  missed_assignee: 5
+  missed_task: 3
+  complete_miss: 3
+  missed_conflict: 2
+
+JSON:   tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250.json
+Report: tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250_report.md
+Redis LLM SLO snapshot (last N calls): {'sample_size': 1000, 'error_rate': 0.066, 'p50_ms': 1568.52, 'p95_ms': 12577.51, 'p99_ms': 301666.19, 'cost_total': 0.0, 'fallback_call_rate': 0.054, 'tier_counts': {'primary': 919, 'gemini': 27, 'fallback': 54}, 'rate_limit_kind_counts': {'tpd': 46, 'tpm': 20}, 'checked_at': '2026-05-06T21:31:58.829068+00:00', 'slo_targets': {'p50_lt_ms': 3000, 'p95_lt_ms': 10000, 'p99_lt_ms': 20000}, 'langsmith_ingest': {'attempts': 1449, 'success': 1449, 'failure_rate': 0.0}}
+EVAL_RUN_ID=20260506T211049Z-8b727001
+LANGSMITH_SESSION_NAME=eval-pipeline-20260506T211049Z-8b727001 (filter runs in LangSmith)
+  RESUME: 72 cached sample(s); running only missing ids.
+  [1/250] resume skip mx-189 (edge_mixed_lang) [cached]
+  [10/250] resume skip eval-070 (email_no_task) [cached]
+  [20/250] resume skip eval-031 (email_multi_task) [cached]
+  [30/250] resume skip fw-205 (edge_forwarded) [cached]
+  [40/250] resume skip eval-025 (email_simple) [cached]
+  [50/250] resume skip nn-248 (edge_nickname) [cached]
+  [60/250] resume skip eval-126 (doc_meeting_notes) [cached]
+  [70/250] resume skip eval-076 (email_no_task) [cached]
+EVAL_STRICT_PRIMARY_MODEL_ONLY: strict Groq primary, no Gemini fallback, model=openai/gpt-oss-120b
+observability: Redis at redis://127.0.0.1:56379 unreachable (ConnectionError). Host-side tools must use the published host port: set REDIS_PUBLISH_PORT (or REDIS_URL) to match Docker/OrbStack left-hand port (e.g. 56379:6379 → 56379). Telemetry retries skipped until restart.
+    pipeline rate-limited, waiting 17s (raw=17s, attempt 1)...
+    pipeline rate-limited, waiting 16s (raw=16s, attempt 2)...
+    pipeline rate-limited, waiting 14s (raw=14s, attempt 3)...
+    pipeline rate-limited, waiting 6s (raw=6s, attempt 4)...
+    pipeline rate-limited, waiting 20s (raw=20s, attempt 5)...
+    pipeline daily quota (TPD/RPD) hit — failing fast
+  ABORT: daily quota (TPD/RPD) exhausted; will write partial JSON to --output then exit.
+  Wrote partial JSON (77/250 samples) -> tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250.json
+Method: pipeline  Model: openai/gpt-oss-120b  {'fallback_calls': 0, 'primary_calls_total': 123, 'fallback_calls_per_sample_total': 0, 'rate_limited_calls_total': 0, 'samples_using_fallback': 0, 'samples_total_with_provenance': 73, 'contaminated': False, 'model_mix': {'openai/gpt-oss-120b': 123}, 'strict_primary_mode': True}
+Samples: 77  Runtime errors: 4
+Title F1:       0.9576  (P=0.9875 R=0.9294)
+Assignee F1:    0.9548
+Deadline Exact: 0.8333
+Deadline Near:  0.8590
+Conflict F1:    0.8333
+Abstention: correct_abstain(empty GT)=1.0 false_answer(empty GT)=0.0 false_abstain(nonempty GT)=0.0781
+Calibration ECE: 0.1127  (confidence pairs: 79)
+Fully correct:  61/77 (79.2%)
+
+Top error types:
+  wrong_deadline: 10
+  missed_assignee: 6
+  missed_task: 5
+  complete_miss: 5
+  missed_conflict: 2
+
+JSON:   tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250.json
+Report: tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250_report.md
+Redis LLM SLO snapshot (last N calls): {'sample_size': 0, 'error_rate': 0.0, 'p50_ms': 0, 'p95_ms': 0, 'p99_ms': 0, 'cost_total': 0.0, 'langsmith_ingest': {}}
+EVAL_RUN_ID=20260506T211049Z-8b727001
+LANGSMITH_SESSION_NAME=eval-pipeline-20260506T211049Z-8b727001 (filter runs in LangSmith)
+  RESUME: 77 cached sample(s); running only missing ids.
+  [1/250] resume skip mx-189 (edge_mixed_lang) [cached]
+  [10/250] resume skip eval-070 (email_no_task) [cached]
+  [20/250] resume skip eval-031 (email_multi_task) [cached]
+  [30/250] resume skip fw-205 (edge_forwarded) [cached]
+  [40/250] resume skip eval-025 (email_simple) [cached]
+  [50/250] resume skip nn-248 (edge_nickname) [cached]
+  [60/250] resume skip eval-126 (doc_meeting_notes) [cached]
+  [70/250] resume skip eval-076 (email_no_task) [cached]
+EVAL_STRICT_PRIMARY_MODEL_ONLY: strict Groq primary, no Gemini fallback, model=openai/gpt-oss-120b
+    pipeline daily quota (TPD/RPD) hit — failing fast
+  ABORT: daily quota (TPD/RPD) exhausted; will write partial JSON to --output then exit.
+  Wrote partial JSON (79/250 samples) -> tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250.json
+Method: pipeline  Model: openai/gpt-oss-120b  {'fallback_calls': 0, 'primary_calls_total': 124, 'fallback_calls_per_sample_total': 0, 'rate_limited_calls_total': 0, 'samples_using_fallback': 0, 'samples_total_with_provenance': 74, 'contaminated': False, 'model_mix': {'openai/gpt-oss-120b': 124}, 'strict_primary_mode': True}
+Samples: 79  Runtime errors: 5
+Title F1:       0.9524  (P=0.9877 R=0.9195)
+Assignee F1:    0.9487
+Deadline Exact: 0.8250
+Deadline Near:  0.8500
+Conflict F1:    0.8333
+Abstention: correct_abstain(empty GT)=1.0 false_answer(empty GT)=0.0 false_abstain(nonempty GT)=0.0909
+Calibration ECE: 0.115  (confidence pairs: 80)
+Fully correct:  62/79 (78.5%)
+
+Top error types:
+  wrong_deadline: 11
+  missed_assignee: 7
+  missed_task: 6
+  complete_miss: 6
+  missed_conflict: 2
+
+JSON:   tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250.json
+Report: tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250_report.md
+Redis LLM SLO snapshot (last N calls): {'sample_size': 1000, 'error_rate': 0.065, 'p50_ms': 1572.52, 'p95_ms': 12577.51, 'p99_ms': 301666.19, 'cost_total': 0.0, 'fallback_call_rate': 0.054, 'tier_counts': {'primary': 919, 'gemini': 27, 'fallback': 54}, 'rate_limit_kind_counts': {'tpd': 45, 'tpm': 20}, 'checked_at': '2026-05-07T00:15:57.556078+00:00', 'slo_targets': {'p50_lt_ms': 3000, 'p95_lt_ms': 10000, 'p99_lt_ms': 20000}, 'langsmith_ingest': {'attempts': 1452, 'success': 1452, 'failure_rate': 0.0}}

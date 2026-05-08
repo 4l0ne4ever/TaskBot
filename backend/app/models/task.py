@@ -16,9 +16,12 @@ class Task(Base):
         UUID(as_uuid=True), ForeignKey("source_documents.id"), nullable=True
     )
     title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     assignee: Mapped[str | None] = mapped_column(Text, nullable=True)
     deadline: Mapped[str | None] = mapped_column(Date, nullable=True)
+    deadline_v2: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     priority: Mapped[str | None] = mapped_column(Text, nullable=True)
+    uncertainty: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     missing_fields: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="pending")
     calendar_event_id: Mapped[str | None] = mapped_column(Text, nullable=True)

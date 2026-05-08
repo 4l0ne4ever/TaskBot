@@ -16,18 +16,19 @@ def test_pipeline_upload_pdf_mock(monkeypatch) -> None:
     save_mod = import_module("app.pipeline.nodes.save_tasks")
     dispatch_mod = import_module("app.pipeline.nodes.dispatch_notifications")
     extract_mod = import_module("app.pipeline.nodes.extract_tasks")
-    normalize_mod = import_module("app.pipeline.nodes.normalize_tasks")
     validate_mod = import_module("app.pipeline.nodes.validate_tasks")
 
     monkeypatch.setattr(save_mod, "save_tasks_sync", _mock_save_sync)
     monkeypatch.setattr(dispatch_mod, "dispatch_notifications_sync", _mock_dispatch_sync)
     monkeypatch.setattr(
         extract_mod, "call_llm",
-        lambda *_a, **_kw: '[{"title":"Prepare budget","deadline_raw":"April 15","assignee_raw":"Finance team","priority_raw":null}]',
-    )
-    monkeypatch.setattr(
-        normalize_mod, "call_llm",
-        lambda *_a, **_kw: '[{"title":"Prepare budget","assignee":"Finance team","deadline":"2026-04-15","priority":null}]',
+        lambda *_a, **_kw: (
+            '[{"title":"Prepare budget","description":"Finance team owns this",'
+            '"assignee":"Finance team",'
+            '"deadline_v2":{"type":"exact","iso":"2026-04-15","start":null,"end":null,"text":"April 15",'
+            '"resolved_from":"April 15","confidence":0.88,"source":"llm","is_ambiguous":false},'
+            '"priority":null,"confidence":0.88,"uncertainty":null}]'
+        ),
     )
     monkeypatch.setattr(
         validate_mod, "call_llm",
@@ -57,18 +58,19 @@ def test_pipeline_upload_text_content(monkeypatch) -> None:
     save_mod = import_module("app.pipeline.nodes.save_tasks")
     dispatch_mod = import_module("app.pipeline.nodes.dispatch_notifications")
     extract_mod = import_module("app.pipeline.nodes.extract_tasks")
-    normalize_mod = import_module("app.pipeline.nodes.normalize_tasks")
     validate_mod = import_module("app.pipeline.nodes.validate_tasks")
 
     monkeypatch.setattr(save_mod, "save_tasks_sync", _mock_save_sync)
     monkeypatch.setattr(dispatch_mod, "dispatch_notifications_sync", _mock_dispatch_sync)
     monkeypatch.setattr(
         extract_mod, "call_llm",
-        lambda *_a, **_kw: '[{"title":"Submit Q2 slides","deadline_raw":"May 1","assignee_raw":"Marketing","priority_raw":"high"}]',
-    )
-    monkeypatch.setattr(
-        normalize_mod, "call_llm",
-        lambda *_a, **_kw: '[{"title":"Submit Q2 slides","assignee":"Marketing","deadline":"2026-05-01","priority":"high"}]',
+        lambda *_a, **_kw: (
+            '[{"title":"Submit Q2 slides","description":"Marketing team requested submission",'
+            '"assignee":"Marketing",'
+            '"deadline_v2":{"type":"exact","iso":"2026-05-01","start":null,"end":null,"text":"May 1",'
+            '"resolved_from":"May 1","confidence":0.9,"source":"llm","is_ambiguous":false},'
+            '"priority":"high","confidence":0.9,"uncertainty":null}]'
+        ),
     )
     monkeypatch.setattr(
         validate_mod, "call_llm",

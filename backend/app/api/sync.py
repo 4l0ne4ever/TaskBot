@@ -12,7 +12,12 @@ from app.models.pipeline_run import PipelineRun
 from app.models.sync_state import SyncState
 from app.models.user import User
 from app.schemas.sync import PipelineRunResponse, SyncStateResponse
-from app.services.auth_service import decrypt_token
+from app.services.auth_service import (
+    decrypt_token,
+    encrypt_token,
+    merge_refreshed_tokens,
+    refresh_google_access_token,
+)
 
 router = APIRouter()
 
@@ -56,8 +61,40 @@ async def sync_trigger(
         )
 
     settings = get_settings()
-    tokens = decrypt_token(current_user.oauth_token)
-    access_token = tokens.get("access_token", "")
+    try:
+        tokens = decrypt_token(current_user.oauth_token)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_GOOGLE_TOKEN", "message": "Stored Google token is invalid"},
+        ) from exc
+    if not isinstance(tokens, dict):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_GOOGLE_TOKEN", "message": "Stored Google token is invalid"},
+        )
+    access_token = str(tokens.get("access_token") or "").strip()
+    refresh_token = str(tokens.get("refresh_token") or "").strip()
+    if refresh_token:
+        refreshed, refresh_error = await refresh_google_access_token(refresh_token)
+        if refreshed and refreshed.get("access_token"):
+            merged_tokens = merge_refreshed_tokens(tokens, refreshed)
+            access_token = str(merged_tokens.get("access_token") or "").strip()
+            current_user.oauth_token = encrypt_token(merged_tokens)
+        else:
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "code": "GOOGLE_AUTH_EXPIRED",
+                    "message": "Google authorization expired. Reconnect Google account in Settings.",
+                    "reason": refresh_error or "refresh_failed",
+                },
+            )
+    if not access_token:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "GOOGLE_AUTH_EXPIRED", "message": "Missing Google access token"},
+        )
 
     redis_client = await get_redis()
     job_payload = {
@@ -66,6 +103,7 @@ async def sync_trigger(
         "access_token": access_token,
         "triggered_by": "manual",
         "time_range": time_range,
+        "sync_profile": (current_user.sync_config or {}).get("sync_profile", "balanced"),
     }
     await redis_client.rpush(settings.pipeline_queue_name, json.dumps(job_payload))
     return {"status": "queued", "source": source}
@@ -101,7 +139,11 @@ async def sync_clear(
 
     redis_client = await get_redis()
     for source in ("gmail", "drive"):
-        await redis_client.delete(f"sync:progress:{current_user.id}:{source}")
+        await redis_client.delete(
+            f"sync:progress:{current_user.id}:{source}",
+            f"sync:disabled:{current_user.id}:{source}",
+            f"mcp:auth_streak:{current_user.id}:{source}",
+        )
     return {"status": "cleared"}
 
 

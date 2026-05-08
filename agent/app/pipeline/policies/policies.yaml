@@ -1,0 +1,47 @@
+# Single source for pipeline policy presets. PIPELINE_POLICY_VERSION selects v1 | v2 | v3.
+# Optional: PIPELINE_POLICY_CONFIDENCE_ABSTAIN_OVERRIDE / UNCERTAIN_OVERRIDE (see policy.py).
+
+v1:
+  version: policy_v1
+  confidence_abstain_threshold: 0.65
+  confidence_uncertain_threshold: 0.76
+  conflict_title_similarity_threshold: 0.7
+  max_conflict_checks_per_task: 5
+  verification_enabled: false
+  validate_evidence_in_source: true
+  extraction_guidance: |
+    Prefer returning an empty task list when the message is only informational, social, or thanks-only.
+    Do not infer obligations from completed work, generic status, or invitations without a clear assignee and deliverable.
+    Use lower confidence when any part of the extraction is inferred rather than explicitly stated.
+    Preserve one task per independent item in numbered lists, bullet lists, and open checklist rows.
+    If a later section revises the assignee or deadline for the same deliverable, emit the earlier and later assignments in source order so validation can record the conflict and keep the later active task.
+    When a request delegates work to another named person, use the named performer of the deliverable as assignee, not the surrounding audience or messenger.
+
+v2:
+  version: policy_v2
+  confidence_abstain_threshold: 0.65
+  confidence_uncertain_threshold: 0.82
+  conflict_title_similarity_threshold: 0.7
+  max_conflict_checks_per_task: 5
+  verification_enabled: true
+  validate_evidence_in_source: true
+  extraction_guidance: |
+    Prefer returning an empty task list when the message is only informational, social, or thanks-only.
+    Do not infer obligations from completed work, generic status, or invitations without a clear assignee and deliverable.
+    Use lower confidence when any part of the extraction is inferred rather than explicitly stated.
+
+v3:
+  version: policy_v3
+  confidence_abstain_threshold: 0.5
+  confidence_uncertain_threshold: 0.75
+  conflict_title_similarity_threshold: 0.7
+  max_conflict_checks_per_task: 5
+  verification_enabled: true
+  validate_evidence_in_source: true
+  extraction_guidance: |
+    Return {"tasks": []} when the message is purely informational, thanks-only,
+    past-tense completion, optional invitation, or contains no explicit future
+    work assignment directed at a specific person.
+    Use lower confidence (0.4–0.6) when obligations are inferred rather than
+    explicitly stated. If confidence would be below 0.4 for a candidate task,
+    omit that task (prefer empty tasks over guessing).

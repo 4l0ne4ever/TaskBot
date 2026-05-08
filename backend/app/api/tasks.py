@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.config import get_settings
 from app.db.session import get_db
 from app.models.source_document import SourceDocument
 from app.models.task import Task
@@ -25,7 +26,12 @@ async def _source_type_by_doc_id(db: AsyncSession, doc_ids: list[UUID]) -> dict[
 
 
 def _task_response(task: Task, source_type: str | None) -> TaskResponse:
-    return TaskResponse.model_validate(task).model_copy(update={"source_type": source_type})
+    data = TaskResponse.model_validate(task).model_dump()
+    data["source_type"] = source_type
+    if not get_settings().task_v2_read_enabled:
+        data["deadline_v2"] = None
+        data["uncertainty"] = None
+    return TaskResponse.model_validate(data)
 
 
 async def _enrich_tasks(db: AsyncSession, tasks: list[Task]) -> list[TaskResponse]:

@@ -94,3 +94,40 @@ async def exchange_code_for_tokens(code: str) -> dict:
         userinfo = userinfo_resp.json()
 
     return {"tokens": tokens, "userinfo": userinfo}
+
+
+async def refresh_google_access_token(refresh_token: str) -> tuple[dict | None, str | None]:
+    settings = get_settings()
+    payload = {
+        "client_id": settings.google_client_id,
+        "client_secret": settings.google_client_secret,
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(GOOGLE_TOKEN_URL, data=payload)
+    except Exception as exc:
+        return None, f"transport:{type(exc).__name__}"
+    if resp.status_code >= 400:
+        body = ""
+        try:
+            body = (resp.text or "")[:160]
+        except Exception:
+            body = ""
+        return None, f"http_{resp.status_code}:{body}".strip()
+    try:
+        data = resp.json()
+    except Exception:
+        return None, "invalid_response:json"
+    if not isinstance(data, dict) or not data.get("access_token"):
+        return None, "invalid_response:no_access_token"
+    return data, None
+
+
+def merge_refreshed_tokens(existing_tokens: dict, refreshed_tokens: dict) -> dict:
+    merged = dict(existing_tokens)
+    for key in ("access_token", "refresh_token", "expires_in", "scope", "token_type"):
+        if refreshed_tokens.get(key) is not None:
+            merged[key] = refreshed_tokens[key]
+    return merged

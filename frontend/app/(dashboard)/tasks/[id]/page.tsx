@@ -23,6 +23,7 @@ export default function TaskDetailPage() {
   const [task, setTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(true);
   const [deadline, setDeadline] = useState("");
+  const [description, setDescription] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -30,6 +31,7 @@ export default function TaskDetailPage() {
       const t = await api.tasks.get(id);
       setTask(t);
       setDeadline(t.deadline ?? "");
+      setDescription(t.description ?? "");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Not found");
       router.push("/tasks");
@@ -45,6 +47,17 @@ export default function TaskDetailPage() {
     try {
       await api.tasks.update(task.id, { deadline: deadline.trim() || null });
       toast.success("Deadline updated");
+      void load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
+    }
+  }
+
+  async function saveDescription() {
+    if (!task) return;
+    try {
+      await api.tasks.update(task.id, { description: description.trim() || null });
+      toast.success("Description updated");
       void load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Save failed");
@@ -77,6 +90,25 @@ export default function TaskDetailPage() {
 
       <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6 space-y-5">
         <h1 className="text-lg font-semibold">{task.title}</h1>
+
+        <div className="space-y-2">
+          <label className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+            Description
+          </label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={4}
+            className="w-full bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+          />
+          <button
+            type="button"
+            onClick={() => void saveDescription()}
+            className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs hover:bg-[var(--card-hover)]"
+          >
+            Save description
+          </button>
+        </div>
 
         <dl className="grid grid-cols-2 gap-4">
           <Field label="Assignee">{task.assignee ?? "\u2014"}</Field>

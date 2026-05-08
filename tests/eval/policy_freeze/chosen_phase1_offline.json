@@ -1,0 +1,29 @@
+{
+  "status": "complete",
+  "sweep_mode": "offline",
+  "created_at_utc": "2026-05-02T02:54:36Z",
+  "source_eval_result": "tests/eval/results/sweep_phase1_baseline.json",
+  "pipeline_policy_version": "v1",
+  "chosen": {
+    "confidence_abstain_threshold": 0.55,
+    "confidence_uncertain_threshold": 0.76,
+    "metrics_snapshot": {
+      "abstain": 0.55,
+      "uncertain": 0.76,
+      "title_f1": 1.0,
+      "deadline_exact": 1.0,
+      "fully_correct_pct": 94.29,
+      "correct_abstain_empty_gt": 1.0,
+      "false_answer_empty_gt": 0.0,
+      "ece": 0.1182,
+      "samples_completed": 35,
+      "runtime_error_count": 0,
+      "aborted_early": false,
+      "abort_reason": "",
+      "contaminated": false,
+      "contaminated_reason": "",
+      "sweep_mode": "offline"
+    }
+  },
+  "csv_path": "tests/eval/policy_freeze/sweep_phase1_offline.csv"
+}

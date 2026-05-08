@@ -72,7 +72,15 @@ export const api = {
     list: (params?: { status?: string; source?: string; sort?: string; limit?: number; offset?: number }) =>
       apiFetch<Task[]>(`/tasks${tasksQuery(params ?? {})}`),
     get: (id: string) => apiFetch<Task>(`/tasks/${id}`),
-    update: (id: string, data: Partial<Pick<Task, "title" | "assignee" | "deadline" | "priority" | "status">>) =>
+    update: (
+      id: string,
+      data: Partial<
+        Pick<
+          Task,
+          "title" | "description" | "assignee" | "deadline" | "deadline_v2" | "priority" | "uncertainty" | "status"
+        >
+      >,
+    ) =>
       apiFetch<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     delete: (id: string) => apiFetch<{ deleted: string; calendar_event_id: string }>(`/tasks/${id}`, { method: "DELETE" }),
   },
@@ -98,7 +106,7 @@ export const api = {
   },
   settings: {
     get: () => apiFetch<SettingsPayload>("/settings"),
-    patch: (body: { gmail_interval?: number; drive_interval?: number }) =>
+    patch: (body: { gmail_interval?: number; drive_interval?: number; sync_profile?: "strict_work" | "balanced" | "broad" }) =>
       apiFetch<SettingsPayload>("/settings", { method: "PATCH", body: JSON.stringify(body) }),
     disconnect: () => apiFetch<{ message: string }>("/settings/disconnect", { method: "POST" }),
   },

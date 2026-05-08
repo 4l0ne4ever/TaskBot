@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import DateTime, ForeignKey, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,3 +20,13 @@ class SourceDocument(Base):
     processed_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
     pipeline_run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index(
+            "uq_source_documents_user_source_ref",
+            "user_id",
+            "source_type",
+            "source_ref",
+            unique=True,
+        ),
+    )

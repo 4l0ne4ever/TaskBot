@@ -255,7 +255,6 @@ def main() -> int:
         "GROQ_API_KEY",
         "GROQ_MODEL",
         "DATABASE_URL",
-        "REDIS_URL",
         "GMAIL_MCP_URL",
         "DRIVE_MCP_URL",
         "CALENDAR_MCP_URL",
@@ -352,8 +351,22 @@ def main() -> int:
             errors += 1
 
         try:
-            _check_redis(_require("REDIS_URL"))
-            _ok("Redis PING OK")
+            r = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "from app.config import get_settings; print(get_settings().redis_url)",
+                ],
+                cwd=ROOT / "backend",
+                env={**os.environ, "PYTHONPATH": str(ROOT / "backend")},
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if r.returncode != 0:
+                raise RuntimeError(r.stderr or r.stdout or "redis url resolve failed")
+            _check_redis(r.stdout.strip())
+            _ok("Redis PING OK (resolved URL from Settings)")
         except Exception as exc:
             _fail(f"Redis: {exc}{_redis_hint(exc)}")
             errors += 1

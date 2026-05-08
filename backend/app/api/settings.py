@@ -17,6 +17,7 @@ def _sync_config(user: User) -> dict:
     return {
         "gmail_interval": config.get("gmail_interval", defaults.sync_gmail_interval_minutes),
         "drive_interval": config.get("drive_interval", defaults.sync_drive_interval_minutes),
+        "sync_profile": config.get("sync_profile", "balanced"),
     }
 
 

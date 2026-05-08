@@ -1,0 +1,5 @@
+abstain,uncertain,title_f1,deadline_exact,fully_correct_pct,correct_abstain_empty_gt,false_answer_empty_gt,ece,fallback_calls,samples_using_fallback,rate_limited_calls,strict_primary_mode,runtime_error_count,runtime_error_kinds,aborted_early,abort_reason,samples_completed,samples_requested,contaminated,contaminated_reason
+0.55,0.76,0.9136,0.7857,77.14,1.0,0.0,0.1,0,0,0,False,1,other=1,False,,35,35,False,
+0.55,0.84,0.9647,0.881,82.86,1.0,0.0,0.1049,0,0,0,False,1,other=1,False,,35,35,False,
+0.65,0.76,0.9647,0.881,85.71,1.0,0.0,0.1049,0,0,0,False,1,other=1,False,,35,35,False,
+0.65,0.84,0.9268,0.8095,82.86,1.0,0.0,0.1105,0,0,0,False,2,other=2,False,,35,35,False,

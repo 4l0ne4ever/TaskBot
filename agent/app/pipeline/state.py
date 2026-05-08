@@ -6,6 +6,8 @@ class PipelineState(TypedDict, total=False):
     access_token: str
     source_doc_id: str
     pipeline_run_id: str
+    eval_sample_id: str  # set by tests/eval pipeline_runner for LangSmith correlation
+    policy_version: str
     content_hash: str
     source_type: Literal["gmail", "drive", "upload"]
     raw_content: str | bytes

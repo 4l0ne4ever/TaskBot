@@ -21,6 +21,32 @@ from app.services.auth_service import (
 router = APIRouter()
 settings = get_settings()
 
+
+async def _clear_auth_revoked_flags(user_id: str) -> None:
+    """Clear any ``mcp_auth_revoked`` disable flags + 401 streak counters
+    written by the agent's queue consumer after the user successfully
+    re-authenticates. Without this, the consumer would keep the 24h
+    auto-suspend in place until TTL expiry even though the new token works.
+
+    Keeps the re-auth path symmetric with the "disable on streak" logic in
+    :mod:`app.scheduler.queue_consumer` — one writer flags, the refresh
+    writer clears.
+    """
+    try:
+        from app.db.redis import get_redis
+
+        r = await get_redis()
+        keys = []
+        for src in ("gmail", "drive"):
+            keys.append(f"sync:disabled:{user_id}:{src}")
+            keys.append(f"mcp:auth_streak:{user_id}:{src}")
+        if keys:
+            await r.delete(*keys)
+    except Exception:
+        # Re-auth must not fail because of a Redis hiccup; the TTL is the
+        # safety net. Log-and-continue is enough here.
+        pass
+
 @router.get("/google")
 async def auth_google() -> RedirectResponse:
     return RedirectResponse(url=build_google_auth_url())
@@ -64,6 +90,8 @@ async def auth_callback(
         user.google_id = google_id
         user.oauth_token = encrypted
         user.last_active_at = datetime.now(UTC)
+
+    await _clear_auth_revoked_flags(str(user.id))
 
     token = create_jwt(str(user.id))
     if as_json:

@@ -51,7 +51,6 @@ def test_pipeline_full_flow_with_mock_llm_and_mock_mcp(monkeypatch) -> None:
     save_mod = import_module("app.pipeline.nodes.save_tasks")
     dispatch_mod = import_module("app.pipeline.nodes.dispatch_notifications")
     extract_mod = import_module("app.pipeline.nodes.extract_tasks")
-    normalize_mod = import_module("app.pipeline.nodes.normalize_tasks")
     validate_mod = import_module("app.pipeline.nodes.validate_tasks")
 
     monkeypatch.setattr(
@@ -67,12 +66,12 @@ def test_pipeline_full_flow_with_mock_llm_and_mock_mcp(monkeypatch) -> None:
     monkeypatch.setattr(
         extract_mod,
         "call_llm",
-        lambda *_args, **_kwargs: '[{"title":"Submit report","deadline_raw":"2026-04-30","assignee_raw":"Alice","priority_raw":"high"}]',
-    )
-    monkeypatch.setattr(
-        normalize_mod,
-        "call_llm",
-        lambda *_args, **_kwargs: '[{"title":"Submit report","assignee":"Alice","deadline":"2026-04-30","priority":"high"}]',
+        lambda *_args, **_kwargs: (
+            '[{"title":"Submit report","description":"submit before due date","assignee":"Alice",'
+            '"deadline_v2":{"type":"exact","iso":"2026-04-30","start":null,"end":null,"text":"by 2026-04-30",'
+            '"resolved_from":"by 2026-04-30","confidence":0.91,"source":"llm","is_ambiguous":false},'
+            '"priority":"high","confidence":0.91,"uncertainty":null}]'
+        ),
     )
     monkeypatch.setattr(
         validate_mod,

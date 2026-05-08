@@ -9,6 +9,7 @@ export default function SettingsPage() {
   const [s, setS] = useState<SettingsPayload | null>(null);
   const [gmail, setGmail] = useState(15);
   const [drive, setDrive] = useState(30);
+  const [profile, setProfile] = useState<"strict_work" | "balanced" | "broad">("balanced");
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -18,6 +19,7 @@ export default function SettingsPage() {
       setS(data);
       setGmail(data.gmail_interval);
       setDrive(data.drive_interval);
+      setProfile(data.sync_profile);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -29,7 +31,7 @@ export default function SettingsPage() {
 
   async function saveIntervals() {
     try {
-      const data = await api.settings.patch({ gmail_interval: gmail, drive_interval: drive });
+      const data = await api.settings.patch({ gmail_interval: gmail, drive_interval: drive, sync_profile: profile });
       setS(data);
       toast.success("Saved");
     } catch (e) {
@@ -86,6 +88,18 @@ export default function SettingsPage() {
           >
             Save intervals
           </button>
+        </div>
+        <div className="space-y-2 pt-2 border-t border-[var(--border)]">
+          <span className="text-sm text-[var(--foreground)]">Sync profile</span>
+          <select
+            value={profile}
+            onChange={(e) => setProfile(e.target.value as "strict_work" | "balanced" | "broad")}
+            className="w-full bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+          >
+            <option value="strict_work">Strict work (high precision, fewer items)</option>
+            <option value="balanced">Balanced (recommended)</option>
+            <option value="broad">Broad (higher recall, more noise)</option>
+          </select>
         </div>
       </section>
 

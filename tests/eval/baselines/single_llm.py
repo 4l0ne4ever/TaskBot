@@ -2,7 +2,7 @@
 Baseline 2 — Single LLM call extraction (no multi-stage pipeline).
 
 One prompt that extracts + normalizes + detects conflicts in a single pass.
-Primary: llama-3.3-70b-versatile, fallback: llama-3.1-8b-instant on rate limit.
+Uses ``EVAL_GROQ_MODEL``, else ``GROQ_MODEL``, else the pydantic default for ``Settings.groq_model``; sleep-and-retry on 429 only.
 """
 from __future__ import annotations
 
@@ -22,12 +22,18 @@ from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv(ROOT / ".env")
 
-PRIMARY_MODEL = os.getenv("EVAL_GROQ_MODEL", "llama-3.3-70b-versatile")
-FALLBACK_MODEL = os.getenv("EVAL_GROQ_FALLBACK", "llama-3.1-8b-instant")
+from app.config import Settings  # noqa: E402
+
+_PRIMARY_GROQ_FALLBACK = str(Settings.model_fields["groq_model"].default)
+PRIMARY_MODEL = (
+    os.getenv("EVAL_GROQ_MODEL")
+    or os.getenv("GROQ_MODEL")
+    or _PRIMARY_GROQ_FALLBACK
+)
 _client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
 _primary_calls = 0
-_fallback_calls = 0
+_rate_limit_retries = 0
 
 SINGLE_PASS_PROMPT = """You are a task extraction and normalization assistant.
 
@@ -90,8 +96,8 @@ def _call(prompt: str, model: str) -> str:
     return resp.choices[0].message.content if resp.choices else "[]"
 
 
-def _call_with_fallback(prompt: str) -> str:
-    global _primary_calls, _fallback_calls
+def _call_with_retry(prompt: str) -> str:
+    global _primary_calls, _rate_limit_retries
     try:
         result = _call(prompt, PRIMARY_MODEL)
         _primary_calls += 1
@@ -101,25 +107,19 @@ def _call_with_fallback(prompt: str) -> str:
         if "429" not in exc_str and "rate_limit" not in exc_str:
             raise
         wait = _wait_from_error(exc_str)
-        if wait > 120 and FALLBACK_MODEL:
-            _fallback_calls += 1
-            return _call(prompt, FALLBACK_MODEL)
         time.sleep(min(wait, 30))
-        try:
-            result = _call(prompt, PRIMARY_MODEL)
-            _primary_calls += 1
-            return result
-        except Exception:
-            _fallback_calls += 1
-            return _call(prompt, FALLBACK_MODEL)
+        _rate_limit_retries += 1
+        result = _call(prompt, PRIMARY_MODEL)
+        _primary_calls += 1
+        return result
 
 
 def get_model_stats() -> dict:
     return {
         "primary_model": PRIMARY_MODEL,
-        "fallback_model": FALLBACK_MODEL,
         "primary_calls": _primary_calls,
-        "fallback_calls": _fallback_calls,
+        "rate_limit_retries": _rate_limit_retries,
+        "fallback_calls": _rate_limit_retries,
     }
 
 
@@ -132,7 +132,7 @@ def extract_single_llm(text: str, metadata: dict) -> dict:
     raw = None
     for attempt in range(5):
         try:
-            raw = _call_with_fallback(prompt)
+            raw = _call_with_retry(prompt)
             break
         except Exception as exc:
             exc_str = str(exc)

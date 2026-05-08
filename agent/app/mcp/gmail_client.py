@@ -15,10 +15,16 @@ class GmailMCPClient(BaseMCPClient):
         *,
         last_sync_at: datetime | None = None,
         max_results: int = 50,
-        label: str = "INBOX",
+        sync_profile: str = "balanced",
     ) -> list[dict[str, Any]]:
         after_ts = int(last_sync_at.timestamp()) if last_sync_at else 0
-        query = f"after:{after_ts} in:{label.lower()}" if after_ts > 0 else f"in:{label.lower()}"
+        if sync_profile == "strict_work":
+            base = "in:inbox category:primary -category:promotions -category:updates -category:forums"
+        elif sync_profile == "broad":
+            base = "in:inbox"
+        else:
+            base = "in:inbox (category:primary OR category:social) -category:promotions -category:updates -category:forums"
+        query = f"after:{after_ts} {base}" if after_ts > 0 else base
         result = await self.call_tool(
             "list_messages",
             {"query": query, "max_results": max_results},

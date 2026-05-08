@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import datetime, timezone
 
@@ -67,7 +68,14 @@ class _FakeRedis:
         self.queue.append(value)
 
 
-def _build_app(fake_db: _FakeDB, user: User | None = None, fake_redis=None, monkeypatch=None) -> FastAPI:
+def _build_app(
+    fake_db: _FakeDB,
+    user: User | None = None,
+    fake_redis=None,
+    monkeypatch=None,
+    *,
+    patch_decrypt: bool = True,
+) -> FastAPI:
     app = FastAPI()
     app.include_router(sync_api.router, prefix="/sync")
 
@@ -83,7 +91,8 @@ def _build_app(fake_db: _FakeDB, user: User | None = None, fake_redis=None, monk
             return fake_redis
 
         monkeypatch.setattr(sync_api, "get_redis", _get_fake_redis)
-        monkeypatch.setattr(sync_api, "decrypt_token", lambda _t: {"access_token": "ga-token"})
+        if patch_decrypt:
+            monkeypatch.setattr(sync_api, "decrypt_token", lambda _t: {"access_token": "ga-token"})
 
     return app
 
@@ -123,6 +132,61 @@ def test_sync_trigger_rejects_without_google_token() -> None:
     client = TestClient(_build_app(db, user))
     r = client.post("/sync/trigger?source=gmail")
     assert r.status_code == 400
+
+
+def test_sync_trigger_refreshes_access_token_before_enqueue(monkeypatch) -> None:
+    user = _make_user()
+    redis = _FakeRedis()
+    db = _FakeDB(sync_states=[])
+    monkeypatch.setattr(
+        sync_api,
+        "decrypt_token",
+        lambda _t: {"access_token": "stale-token", "refresh_token": "r1"},
+    )
+    async def _refresh(_refresh_token: str):
+        return {"access_token": "fresh-token", "expires_in": 3600}, None
+    monkeypatch.setattr(sync_api, "refresh_google_access_token", _refresh)
+    monkeypatch.setattr(sync_api, "encrypt_token", lambda tok: f"enc::{tok.get('access_token')}")
+    client = TestClient(_build_app(db, user, fake_redis=redis, monkeypatch=monkeypatch, patch_decrypt=False))
+    r = client.post("/sync/trigger?source=gmail")
+    assert r.status_code == 200
+    assert len(redis.queue) == 1
+    payload = json.loads(redis.queue[0])
+    assert payload["access_token"] == "fresh-token"
+    assert user.oauth_token == "enc::fresh-token"
+
+
+def test_sync_trigger_returns_401_when_refresh_fails(monkeypatch) -> None:
+    user = _make_user()
+    redis = _FakeRedis()
+    db = _FakeDB(sync_states=[])
+    monkeypatch.setattr(
+        sync_api,
+        "decrypt_token",
+        lambda _t: {"access_token": "stale-token", "refresh_token": "r1"},
+    )
+    async def _refresh(_refresh_token: str):
+        return None, "http_400:invalid_grant"
+    monkeypatch.setattr(sync_api, "refresh_google_access_token", _refresh)
+    client = TestClient(_build_app(db, user, fake_redis=redis, monkeypatch=monkeypatch, patch_decrypt=False))
+    r = client.post("/sync/trigger?source=gmail")
+    assert r.status_code == 401
+    assert r.json()["detail"]["code"] == "GOOGLE_AUTH_EXPIRED"
+    assert len(redis.queue) == 0
+
+
+def test_sync_trigger_returns_400_when_stored_token_invalid(monkeypatch) -> None:
+    user = _make_user()
+    redis = _FakeRedis()
+    db = _FakeDB(sync_states=[])
+    def _broken_decrypt(_token):
+        raise ValueError("broken")
+    monkeypatch.setattr(sync_api, "decrypt_token", _broken_decrypt)
+    client = TestClient(_build_app(db, user, fake_redis=redis, monkeypatch=monkeypatch, patch_decrypt=False))
+    r = client.post("/sync/trigger?source=gmail")
+    assert r.status_code == 400
+    assert r.json()["detail"]["code"] == "INVALID_GOOGLE_TOKEN"
+    assert len(redis.queue) == 0
 
 
 def test_sync_history_returns_pipeline_runs() -> None:

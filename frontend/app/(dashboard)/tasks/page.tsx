@@ -149,6 +149,9 @@ export default function TasksPage() {
                     <Link href={`/tasks/${t.id}`} className="text-[var(--accent)] hover:underline font-medium">
                       {t.title}
                     </Link>
+                    {t.description && (
+                      <p className="mt-1 text-xs text-[var(--muted)] line-clamp-2 max-w-[36rem]">{t.description}</p>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-[var(--muted)]">{t.assignee ?? "\u2014"}</td>
                   <td className="px-4 py-3 text-[var(--muted)] tabular-nums">{t.deadline ?? "\u2014"}</td>
