@@ -114,3 +114,61 @@ Top error types:
 JSON:   tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250.json
 Report: tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250_report.md
 Redis LLM SLO snapshot (last N calls): {'sample_size': 1000, 'error_rate': 0.065, 'p50_ms': 1572.52, 'p95_ms': 12577.51, 'p99_ms': 301666.19, 'cost_total': 0.0, 'fallback_call_rate': 0.054, 'tier_counts': {'primary': 919, 'gemini': 27, 'fallback': 54}, 'rate_limit_kind_counts': {'tpd': 45, 'tpm': 20}, 'checked_at': '2026-05-07T00:15:57.556078+00:00', 'slo_targets': {'p50_lt_ms': 3000, 'p95_lt_ms': 10000, 'p99_lt_ms': 20000}, 'langsmith_ingest': {'attempts': 1452, 'success': 1452, 'failure_rate': 0.0}}
+EVAL_RUN_ID=20260506T211049Z-8b727001
+LANGSMITH_SESSION_NAME=eval-pipeline-20260506T211049Z-8b727001 (filter runs in LangSmith)
+  RESUME: 79 cached sample(s); running only missing ids.
+  [1/250] resume skip mx-189 (edge_mixed_lang) [cached]
+  [10/250] resume skip eval-070 (email_no_task) [cached]
+  [20/250] resume skip eval-031 (email_multi_task) [cached]
+  [30/250] resume skip fw-205 (edge_forwarded) [cached]
+  [40/250] resume skip eval-025 (email_simple) [cached]
+  [50/250] resume skip nn-248 (edge_nickname) [cached]
+  [60/250] resume skip eval-126 (doc_meeting_notes) [cached]
+  [70/250] resume skip eval-076 (email_no_task) [cached]
+  [80/250] processing tn-227 (edge_tricky_negative)...
+EVAL_STRICT_PRIMARY_MODEL_ONLY: strict Groq primary, no Gemini fallback, model=openai/gpt-oss-120b
+  ... batch cooldown 45.0s after 80/250 samples (rate-limit hygiene)
+    pipeline rate-limited, waiting 30s (raw=24305s, attempt 1)...
+    pipeline rate-limited, waiting 20s (raw=20s, attempt 1)...
+  [90/250] processing nl-200 (edge_noisy_long)...
+  [100/250] processing nl-197 (edge_noisy_long)...
+  ... batch cooldown 45.0s after 100/250 samples (rate-limit hygiene)
+  [110/250] processing eval-067 (email_no_task)...
+    pipeline rate-limited, waiting 4s (raw=4s, attempt 1)...
+    pipeline rate-limited, waiting 5s (raw=5s, attempt 2)...
+    pipeline rate-limited, waiting 20s (raw=20s, attempt 3)...
+  [120/250] processing fw-202 (edge_forwarded)...
+  ... batch cooldown 45.0s after 120/250 samples (rate-limit hygiene)
+  [130/250] processing nn-244 (edge_nickname)...
+  [140/250] processing eval-173 (missing_assignee)...
+  ... batch cooldown 45.0s after 140/250 samples (rate-limit hygiene)
+  [150/250] processing sf-239 (edge_special_format)...
+  [160/250] processing tn-228 (edge_tricky_negative)...
+  ... batch cooldown 45.0s after 160/250 samples (rate-limit hygiene)
+  [170/250] processing eval-127 (doc_meeting_notes)...
+  [180/250] processing mx-183 (edge_mixed_lang)...
+  ... batch cooldown 45.0s after 180/250 samples (rate-limit hygiene)
+    pipeline daily quota (TPD/RPD) hit — failing fast
+  ABORT: daily quota (TPD/RPD) exhausted; will write partial JSON to --output then exit.
+  Wrote partial JSON (185/250 samples) -> tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250.json
+Method: pipeline  Model: openai/gpt-oss-120b  {'fallback_calls': 0, 'primary_calls_total': 321, 'fallback_calls_per_sample_total': 0, 'rate_limited_calls_total': 12, 'samples_using_fallback': 0, 'samples_total_with_provenance': 177, 'contaminated': False, 'model_mix': {'openai/gpt-oss-120b': 321}, 'strict_primary_mode': True}
+Samples: 185  Runtime errors: 8
+Title F1:       0.9657  (P=0.9801 R=0.9517)
+Assignee F1:    0.9610
+Deadline Exact: 0.8182
+Deadline Near:  0.8610
+Conflict F1:    0.8000
+Abstention: correct_abstain(empty GT)=1.0 false_answer(empty GT)=0.0 false_abstain(nonempty GT)=0.0577
+Calibration ECE: 0.1091  (confidence pairs: 197)
+Fully correct:  145/185 (78.4%)
+
+Top error types:
+  wrong_deadline: 25
+  missed_assignee: 13
+  missed_task: 9
+  complete_miss: 9
+  deadline_off_by_one: 8
+
+JSON:   tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250.json
+Report: tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250_report.md
+Redis LLM SLO snapshot (last N calls): {'sample_size': 1000, 'error_rate': 0.058, 'p50_ms': 1696.89, 'p95_ms': 12530.18, 'p99_ms': 13891.95, 'cost_total': 0.0, 'fallback_call_rate': 0.054, 'tier_counts': {'primary': 924, 'gemini': 22, 'fallback': 54}, 'rate_limit_kind_counts': {'tpd': 26, 'tpm': 32}, 'checked_at': '2026-05-09T08:14:41.307788+00:00', 'slo_targets': {'p50_lt_ms': 3000, 'p95_lt_ms': 10000, 'p99_lt_ms': 20000}, 'langsmith_ingest': {'attempts': 1739, 'success': 1739, 'failure_rate': 0.0}}
