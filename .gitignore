@@ -29,3 +29,5 @@ docs/
 # Eval outputs (regenerate with tests/eval/run_eval.py)
 tests/eval/results/*
 !tests/eval/results/.gitkeep
+.claude/
+CLAUDE.md

@@ -1,0 +1,340 @@
+{
+  "method": "pipeline",
+  "eval_model": "openai/gpt-oss-120b",
+  "policy": {
+    "pipeline_policy_version": "v1",
+    "policy_threshold_overrides": {
+      "abstain": "0.55",
+      "uncertain": "0.76"
+    },
+    "cost_control_overrides": {
+      "verification_enabled": null,
+      "max_conflict_checks": null,
+      "eval_enable_conflict_check": null,
+      "extraction_max_retries": null
+    },
+    "effective": {
+      "pipeline_policy_version_key": "v1",
+      "confidence_abstain_threshold": 0.55,
+      "confidence_uncertain_threshold": 0.76,
+      "verification_enabled": false,
+      "max_conflict_checks_per_task": 5,
+      "policy_version_label": "policy_v1"
+    }
+  },
+  "model_stats": {
+    "fallback_calls": 0,
+    "primary_calls_total": 3,
+    "fallback_calls_per_sample_total": 0,
+    "rate_limited_calls_total": 0,
+    "samples_using_fallback": 0,
+    "samples_total_with_provenance": 1,
+    "contaminated": false,
+    "model_mix": {
+      "openai/gpt-oss-120b": 3
+    },
+    "strict_primary_mode": true
+  },
+  "timestamp": "2026-05-10T12:09:36.013244",
+  "dataset_info": {
+    "path": "/Users/duongcongthuyet/Downloads/workspace/AI /taskExtractor/tests/eval/policy_freeze/_rerun_nl195_only.json",
+    "total_samples": 1,
+    "requested_samples": 1,
+    "total_categories": 1,
+    "limit_applied": 1
+  },
+  "eval_notes": {
+    "samples_with_eval_existing_tasks": 0,
+    "conflict_eval_samples_skipped_for_metric": 0,
+    "conflict_eval_samples_included_in_aggregate": 1,
+    "conflict_metrics_note": "Conflict F1 is aggregated only for samples that are not conflict_eval_skipped: GT conflict rows without a non-empty eval_existing_tasks fixture are excluded so the metric is not artificially zero. Rows with a fixture exercise validate-node conflict detection.",
+    "eval_run_id": "20260510T050913Z-4a81d464",
+    "langsmith_session_name": "eval-pipeline-20260510T050913Z-4a81d464",
+    "strict_primary_model_only": true,
+    "aborted_early": false,
+    "abort_reason": null,
+    "abort_after_samples": null,
+    "resume_source_path": null,
+    "resume_cached_samples_at_start": 0,
+    "langsmith_hint": "Each LLM call is logged as groq_chat_completion; each document as pipeline_run_trace. Filter by session name above; per-sample via inputs.sample_id."
+  },
+  "aborted_early": false,
+  "abort_reason": null,
+  "abort_after_samples": null,
+  "overall": {
+    "title_f1": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "assignee_f1": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "deadline_exact": 1.0,
+    "deadline_near": 1.0,
+    "conflict_f1": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "abstention": {
+      "when_expected_empty": {
+        "samples": 0,
+        "correct_abstain_rate": null,
+        "false_answer_rate": null
+      },
+      "when_expected_nonempty": {
+        "samples": 1,
+        "false_abstain_rate": 0.0
+      }
+    },
+    "calibration": {
+      "bins": [
+        {
+          "range": "[0.0,0.2)",
+          "n": 0.0,
+          "accuracy": 0.0
+        },
+        {
+          "range": "[0.2,0.4)",
+          "n": 0.0,
+          "accuracy": 0.0
+        },
+        {
+          "range": "[0.4,0.6)",
+          "n": 0.0,
+          "accuracy": 0.0
+        },
+        {
+          "range": "[0.6,0.8)",
+          "n": 0.0,
+          "accuracy": 0.0
+        },
+        {
+          "range": "[0.8,1.0)",
+          "n": 1.0,
+          "accuracy": 1.0
+        }
+      ],
+      "ece": 0.1,
+      "confidence_samples": 1
+    },
+    "counts": {
+      "samples": 1,
+      "title_tp": 1,
+      "title_fp": 0,
+      "title_fn": 0,
+      "deadline_total": 1,
+      "conflict_eval_samples_scoped": 1,
+      "conflict_eval_samples_skipped": 0
+    }
+  },
+  "per_category": {
+    "edge_noisy_long": {
+      "title_f1": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "assignee_f1": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "deadline_exact": 1.0,
+      "deadline_near": 1.0,
+      "conflict_f1": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "abstention": {
+        "when_expected_empty": {
+          "samples": 0,
+          "correct_abstain_rate": null,
+          "false_answer_rate": null
+        },
+        "when_expected_nonempty": {
+          "samples": 1,
+          "false_abstain_rate": 0.0
+        }
+      },
+      "calibration": {
+        "bins": [
+          {
+            "range": "[0.0,0.2)",
+            "n": 0.0,
+            "accuracy": 0.0
+          },
+          {
+            "range": "[0.2,0.4)",
+            "n": 0.0,
+            "accuracy": 0.0
+          },
+          {
+            "range": "[0.4,0.6)",
+            "n": 0.0,
+            "accuracy": 0.0
+          },
+          {
+            "range": "[0.6,0.8)",
+            "n": 0.0,
+            "accuracy": 0.0
+          },
+          {
+            "range": "[0.8,1.0)",
+            "n": 1.0,
+            "accuracy": 1.0
+          }
+        ],
+        "ece": 0.1,
+        "confidence_samples": 1
+      },
+      "counts": {
+        "samples": 1,
+        "title_tp": 1,
+        "title_fp": 0,
+        "title_fn": 0,
+        "deadline_total": 1,
+        "conflict_eval_samples_scoped": 1,
+        "conflict_eval_samples_skipped": 0
+      }
+    }
+  },
+  "error_type_distribution": {},
+  "runtime_errors": [],
+  "runtime_error_count": 0,
+  "runtime_error_kinds": {},
+  "sample_details": [
+    {
+      "id": "nl-195",
+      "category": "edge_noisy_long",
+      "language": "vi",
+      "edge_tags": [
+        "noisy",
+        "long_text",
+        "signature"
+      ],
+      "input_excerpt": "Chào team,\n\nCảm ơn mọi người đã tham gia buổi họp hôm qua. Mình tóm tắt lại một số điểm chính:\n\n- Doanh thu Q1 tăng 15% so với cùng kỳ năm ngoái\n- Chi phí marketing đã được tối ưu\n- Nhóm R&D đang nghi...",
+      "expected_task_count": 1,
+      "predicted_task_count": 1,
+      "expected_tasks": [
+        {
+          "title": "Soạn bản đánh giá nhân sự",
+          "assignee": "Huỳnh",
+          "deadline": "2026-04-10",
+          "priority": null
+        }
+      ],
+      "predicted_tasks": [
+        {
+          "title": "soạn bản đánh giá nhân sự",
+          "assignee": "Huỳnh",
+          "assignee_canonical": "Huỳnh",
+          "deadline": "2026-04-10",
+          "priority": null,
+          "confidence": 0.92,
+          "raw_confidence": 0.92,
+          "decision_score": 0.92,
+          "decision_band": "accept",
+          "abstained": false
+        }
+      ],
+      "expected_conflicts": [],
+      "eval_existing_tasks_present": false,
+      "predicted_conflicts": [],
+      "scores": {
+        "title": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        },
+        "assignee": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        },
+        "deadline": {
+          "exact": 1,
+          "near": 1,
+          "total": 1
+        },
+        "conflict": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        },
+        "conflict_eval_skipped": false,
+        "abstention": {
+          "expected_empty": false,
+          "pred_empty": false,
+          "correct_abstain": false,
+          "false_answer_on_empty": false,
+          "false_abstain_on_nonempty": false
+        },
+        "calibration_bins": [
+          {
+            "n": 0,
+            "correct": 0
+          },
+          {
+            "n": 0,
+            "correct": 0
+          },
+          {
+            "n": 0,
+            "correct": 0
+          },
+          {
+            "n": 0,
+            "correct": 0
+          },
+          {
+            "n": 1,
+            "correct": 1
+          }
+        ]
+      },
+      "error_types": [],
+      "is_correct": true,
+      "prediction_meta": {
+        "model_provenance": {
+          "primary_calls": 3,
+          "fallback_calls": 0,
+          "rate_limited_calls": 0,
+          "models_used": {
+            "openai/gpt-oss-120b": 3
+          },
+          "contaminated": false
+        },
+        "candidate_tasks": [
+          {
+            "title": "soạn bản đánh giá nhân sự",
+            "assignee": "Huỳnh",
+            "assignee_canonical": "Huỳnh",
+            "deadline": "2026-04-10",
+            "priority": null,
+            "confidence": 0.92,
+            "raw_confidence": 0.92,
+            "decision_score": 0.92,
+            "decision_band": "accept",
+            "abstained": false
+          }
+        ],
+        "candidate_task_count": 1,
+        "scored_task_count": 1
+      },
+      "model_provenance": {
+        "primary_calls": 3,
+        "fallback_calls": 0,
+        "rate_limited_calls": 0,
+        "models_used": {
+          "openai/gpt-oss-120b": 3
+        },
+        "contaminated": false
+      }
+    }
+  ]
+}

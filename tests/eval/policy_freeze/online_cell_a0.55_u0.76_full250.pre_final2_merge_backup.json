@@ -24,18 +24,18 @@
   },
   "model_stats": {
     "fallback_calls": 0,
-    "primary_calls_total": 478,
+    "primary_calls_total": 471,
     "fallback_calls_per_sample_total": 0,
-    "rate_limited_calls_total": 23,
+    "rate_limited_calls_total": 20,
     "samples_using_fallback": 0,
-    "samples_total_with_provenance": 250,
+    "samples_total_with_provenance": 248,
     "contaminated": false,
     "model_mix": {
-      "openai/gpt-oss-120b": 478
+      "openai/gpt-oss-120b": 471
     },
     "strict_primary_mode": true
   },
-  "timestamp": "2026-05-10T05:09:42.093402+00:00",
+  "timestamp": "2026-05-10T04:48:23.288082+00:00",
   "dataset_info": {
     "path": "/Users/duongcongthuyet/Downloads/workspace/AI /taskExtractor/tests/eval/labeled_dataset.json",
     "total_samples": 250,
@@ -57,10 +57,19 @@
     "resume_source_path": "/Users/duongcongthuyet/Downloads/workspace/AI /taskExtractor/tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250.json",
     "resume_cached_samples_at_start": 194,
     "langsmith_hint": "Each LLM call is logged as groq_chat_completion; each document as pipeline_run_trace. Filter by session name above; per-sample via inputs.sample_id.",
-    "runtime_rerun_merge_at_utc": "2026-05-10T05:09:42Z",
-    "runtime_rerun_source": "/Users/duongcongthuyet/Downloads/workspace/AI /taskExtractor/tests/eval/policy_freeze/_rerun_nl195_only_out.json",
+    "runtime_rerun_merge_at_utc": "2026-05-10T04:48:23Z",
+    "runtime_rerun_source": "/Users/duongcongthuyet/Downloads/workspace/AI /taskExtractor/tests/eval/policy_freeze/_rerun_runtime_error_10ids_out.json",
     "runtime_rerun_replaced_ids_sorted": [
-      "nl-195"
+      "ac-159",
+      "dc-138",
+      "dc-142",
+      "dc-146",
+      "eval-133",
+      "eval-178",
+      "mx-186",
+      "nl-192",
+      "nl-195",
+      "pr-211"
     ]
   },
   "aborted_early": false,
@@ -68,17 +77,17 @@
   "abort_after_samples": null,
   "overall": {
     "title_f1": {
-      "precision": 0.9782,
-      "recall": 0.989,
-      "f1": 0.9835
+      "precision": 0.9816,
+      "recall": 0.9816,
+      "f1": 0.9816
     },
     "assignee_f1": {
-      "precision": 0.996,
-      "recall": 0.9427,
-      "f1": 0.9686
+      "precision": 0.9959,
+      "recall": 0.9351,
+      "f1": 0.9646
     },
-    "deadline_exact": 0.8595,
-    "deadline_near": 0.9008,
+    "deadline_exact": 0.8554,
+    "deadline_near": 0.8926,
     "conflict_f1": {
       "precision": 1.0,
       "recall": 0.8,
@@ -92,7 +101,7 @@
       },
       "when_expected_nonempty": {
         "samples": 210,
-        "false_abstain_rate": 0.0143
+        "false_abstain_rate": 0.0238
       }
     },
     "calibration": {
@@ -114,23 +123,23 @@
         },
         {
           "range": "[0.6,0.8)",
-          "n": 11.0,
+          "n": 10.0,
           "accuracy": 1.0
         },
         {
           "range": "[0.8,1.0)",
-          "n": 258.0,
+          "n": 257.0,
           "accuracy": 1.0
         }
       ],
-      "ece": 0.1082,
-      "confidence_samples": 269
+      "ece": 0.1075,
+      "confidence_samples": 267
     },
     "counts": {
       "samples": 250,
-      "title_tp": 269,
-      "title_fp": 6,
-      "title_fn": 3,
+      "title_tp": 267,
+      "title_fp": 5,
+      "title_fn": 5,
       "deadline_total": 242,
       "conflict_eval_samples_scoped": 250,
       "conflict_eval_samples_skipped": 0
@@ -209,17 +218,17 @@
     },
     "conflict_deadline": {
       "title_f1": {
-        "precision": 0.75,
-        "recall": 1.0,
-        "f1": 0.8571
+        "precision": 0.7778,
+        "recall": 0.9333,
+        "f1": 0.8485
       },
       "assignee_f1": {
         "precision": 1.0,
-        "recall": 0.3333,
-        "f1": 0.5
+        "recall": 0.2667,
+        "f1": 0.4211
       },
       "deadline_exact": 0.8,
-      "deadline_near": 1.0,
+      "deadline_near": 0.9333,
       "conflict_f1": {
         "precision": 1.0,
         "recall": 0.7333,
@@ -233,7 +242,7 @@
         },
         "when_expected_nonempty": {
           "samples": 15,
-          "false_abstain_rate": 0.0
+          "false_abstain_rate": 0.0667
         }
       },
       "calibration": {
@@ -255,7 +264,7 @@
           },
           {
             "range": "[0.6,0.8)",
-            "n": 2.0,
+            "n": 1.0,
             "accuracy": 1.0
           },
           {
@@ -264,14 +273,14 @@
             "accuracy": 1.0
           }
         ],
-        "ece": 0.1267,
-        "confidence_samples": 15
+        "ece": 0.1143,
+        "confidence_samples": 14
       },
       "counts": {
         "samples": 15,
-        "title_tp": 15,
-        "title_fp": 5,
-        "title_fn": 0,
+        "title_tp": 14,
+        "title_fp": 4,
+        "title_fn": 1,
         "deadline_total": 15,
         "conflict_eval_samples_scoped": 15,
         "conflict_eval_samples_skipped": 0
@@ -630,16 +639,16 @@
     "edge_noisy_long": {
       "title_f1": {
         "precision": 1.0,
-        "recall": 1.0,
-        "f1": 1.0
+        "recall": 0.9,
+        "f1": 0.9474
       },
       "assignee_f1": {
         "precision": 1.0,
-        "recall": 1.0,
-        "f1": 1.0
+        "recall": 0.9,
+        "f1": 0.9474
       },
-      "deadline_exact": 1.0,
-      "deadline_near": 1.0,
+      "deadline_exact": 0.9,
+      "deadline_near": 0.9,
       "conflict_f1": {
         "precision": 0.0,
         "recall": 0.0,
@@ -653,7 +662,7 @@
         },
         "when_expected_nonempty": {
           "samples": 10,
-          "false_abstain_rate": 0.0
+          "false_abstain_rate": 0.1
         }
       },
       "calibration": {
@@ -680,18 +689,18 @@
           },
           {
             "range": "[0.8,1.0)",
-            "n": 10.0,
+            "n": 9.0,
             "accuracy": 1.0
           }
         ],
         "ece": 0.1,
-        "confidence_samples": 10
+        "confidence_samples": 9
       },
       "counts": {
         "samples": 10,
-        "title_tp": 10,
+        "title_tp": 9,
         "title_fp": 0,
-        "title_fn": 0,
+        "title_fn": 1,
         "deadline_total": 10,
         "conflict_eval_samples_scoped": 10,
         "conflict_eval_samples_skipped": 0
@@ -1329,18 +1338,34 @@
     }
   },
   "error_type_distribution": {
-    "wrong_deadline": 24,
-    "missed_assignee": 15,
-    "deadline_off_by_one": 10,
-    "hallucinated_task": 6,
+    "wrong_deadline": 26,
+    "missed_assignee": 17,
+    "deadline_off_by_one": 9,
+    "missed_task": 5,
     "missed_conflict": 5,
-    "missed_task": 3,
-    "complete_miss": 3,
+    "complete_miss": 5,
+    "hallucinated_task": 5,
     "wrong_assignee": 1
   },
-  "runtime_errors": [],
-  "runtime_error_count": 0,
-  "runtime_error_kinds": {},
+  "runtime_errors": [
+    {
+      "index": 0,
+      "id": "dc-138",
+      "error": "Error code: 400 - {'error': {'message': \"Failed to generate JSON. Please adjust your prompt. See 'failed_generation' for more details.\", 'type': 'invalid_request_error', 'code': 'json_validate_failed', 'failed_generation': 'max completion tokens reached before generating a valid document'}}",
+      "kind": "other"
+    },
+    {
+      "index": 2,
+      "id": "nl-195",
+      "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01k84ykp2cecr80f4b0bx4xj2w` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 7363, Requested 2647. Please try again in 15.075s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}",
+      "kind": "rate_limit_other"
+    }
+  ],
+  "runtime_error_count": 2,
+  "runtime_error_kinds": {
+    "other": 1,
+    "rate_limit_other": 1
+  },
   "sample_details": [
     {
       "id": "mx-189",
@@ -6588,7 +6613,7 @@
       "edge_tags": null,
       "input_excerpt": "Email thread:\n\n[Email 1 — 2026-03-30]\nNgô Thanh Tùng, tài liệu thiết kế nộp trước thứ Sáu nhé.\n\n[Email 2 — 2026-04-01]\nCập nhật: tài liệu thiết kế cần nộp trước ngày mai.",
       "expected_task_count": 1,
-      "predicted_task_count": 2,
+      "predicted_task_count": 0,
       "expected_tasks": [
         {
           "title": "Tài liệu thiết kế",
@@ -6597,32 +6622,7 @@
           "priority": null
         }
       ],
-      "predicted_tasks": [
-        {
-          "title": "nộp tài liệu thiết kế",
-          "assignee": "Ngô Thanh Tùng",
-          "assignee_canonical": "Ngô Thanh Tùng",
-          "deadline": "2026-04-03",
-          "priority": null,
-          "confidence": 0.78,
-          "raw_confidence": 0.78,
-          "decision_score": 0.78,
-          "decision_band": "accept",
-          "abstained": false
-        },
-        {
-          "title": "nộp tài liệu thiết kế",
-          "assignee": null,
-          "assignee_canonical": null,
-          "deadline": "2026-04-02",
-          "priority": null,
-          "confidence": 0.85,
-          "raw_confidence": 0.85,
-          "decision_score": 0.85,
-          "decision_band": "accept",
-          "abstained": false
-        }
-      ],
+      "predicted_tasks": [],
       "expected_conflicts": [
         {
           "type": "deadline_conflict",
@@ -6635,18 +6635,18 @@
       "predicted_conflicts": [],
       "scores": {
         "title": {
-          "tp": 1,
-          "fp": 1,
-          "fn": 0
+          "tp": 0,
+          "fp": 0,
+          "fn": 1
         },
         "assignee": {
-          "tp": 1,
+          "tp": 0,
           "fp": 0,
-          "fn": 0
+          "fn": 1
         },
         "deadline": {
           "exact": 0,
-          "near": 1,
+          "near": 0,
           "total": 1
         },
         "conflict": {
@@ -6657,10 +6657,10 @@
         "conflict_eval_skipped": false,
         "abstention": {
           "expected_empty": false,
-          "pred_empty": false,
+          "pred_empty": true,
           "correct_abstain": false,
           "false_answer_on_empty": false,
-          "false_abstain_on_nonempty": false
+          "false_abstain_on_nonempty": true
         },
         "calibration_bins": [
           {
@@ -6676,8 +6676,8 @@
             "correct": 0
           },
           {
-            "n": 1,
-            "correct": 1
+            "n": 0,
+            "correct": 0
           },
           {
             "n": 0,
@@ -6686,59 +6686,14 @@
         ]
       },
       "error_types": [
-        "hallucinated_task",
-        "deadline_off_by_one",
-        "missed_conflict"
+        "missed_task",
+        "missed_assignee",
+        "wrong_deadline",
+        "missed_conflict",
+        "complete_miss"
       ],
       "is_correct": false,
-      "prediction_meta": {
-        "model_provenance": {
-          "primary_calls": 4,
-          "fallback_calls": 0,
-          "rate_limited_calls": 3,
-          "models_used": {
-            "openai/gpt-oss-120b": 4
-          },
-          "contaminated": false
-        },
-        "candidate_tasks": [
-          {
-            "title": "nộp tài liệu thiết kế",
-            "assignee": "Ngô Thanh Tùng",
-            "assignee_canonical": "Ngô Thanh Tùng",
-            "deadline": "2026-04-03",
-            "priority": null,
-            "confidence": 0.78,
-            "raw_confidence": 0.78,
-            "decision_score": 0.78,
-            "decision_band": "accept",
-            "abstained": false
-          },
-          {
-            "title": "nộp tài liệu thiết kế",
-            "assignee": null,
-            "assignee_canonical": null,
-            "deadline": "2026-04-02",
-            "priority": null,
-            "confidence": 0.85,
-            "raw_confidence": 0.85,
-            "decision_score": 0.85,
-            "decision_band": "accept",
-            "abstained": false
-          }
-        ],
-        "candidate_task_count": 2,
-        "scored_task_count": 2
-      },
-      "model_provenance": {
-        "primary_calls": 4,
-        "fallback_calls": 0,
-        "rate_limited_calls": 3,
-        "models_used": {
-          "openai/gpt-oss-120b": 4
-        },
-        "contaminated": false
-      }
+      "prediction_meta": {}
     },
     {
       "id": "eval-054",
@@ -10826,7 +10781,7 @@
       ],
       "input_excerpt": "Chào team,\n\nCảm ơn mọi người đã tham gia buổi họp hôm qua. Mình tóm tắt lại một số điểm chính:\n\n- Doanh thu Q1 tăng 15% so với cùng kỳ năm ngoái\n- Chi phí marketing đã được tối ưu\n- Nhóm R&D đang nghi...",
       "expected_task_count": 1,
-      "predicted_task_count": 1,
+      "predicted_task_count": 0,
       "expected_tasks": [
         {
           "title": "Soạn bản đánh giá nhân sự",
@@ -10835,37 +10790,24 @@
           "priority": null
         }
       ],
-      "predicted_tasks": [
-        {
-          "title": "soạn bản đánh giá nhân sự",
-          "assignee": "Huỳnh",
-          "assignee_canonical": "Huỳnh",
-          "deadline": "2026-04-10",
-          "priority": null,
-          "confidence": 0.92,
-          "raw_confidence": 0.92,
-          "decision_score": 0.92,
-          "decision_band": "accept",
-          "abstained": false
-        }
-      ],
+      "predicted_tasks": [],
       "expected_conflicts": [],
       "eval_existing_tasks_present": false,
       "predicted_conflicts": [],
       "scores": {
         "title": {
-          "tp": 1,
+          "tp": 0,
           "fp": 0,
-          "fn": 0
+          "fn": 1
         },
         "assignee": {
-          "tp": 1,
+          "tp": 0,
           "fp": 0,
-          "fn": 0
+          "fn": 1
         },
         "deadline": {
-          "exact": 1,
-          "near": 1,
+          "exact": 0,
+          "near": 0,
           "total": 1
         },
         "conflict": {
@@ -10876,10 +10818,10 @@
         "conflict_eval_skipped": false,
         "abstention": {
           "expected_empty": false,
-          "pred_empty": false,
+          "pred_empty": true,
           "correct_abstain": false,
           "false_answer_on_empty": false,
-          "false_abstain_on_nonempty": false
+          "false_abstain_on_nonempty": true
         },
         "calibration_bins": [
           {
@@ -10899,49 +10841,19 @@
             "correct": 0
           },
           {
-            "n": 1,
-            "correct": 1
+            "n": 0,
+            "correct": 0
           }
         ]
       },
-      "error_types": [],
-      "is_correct": true,
-      "prediction_meta": {
-        "model_provenance": {
-          "primary_calls": 3,
-          "fallback_calls": 0,
-          "rate_limited_calls": 0,
-          "models_used": {
-            "openai/gpt-oss-120b": 3
-          },
-          "contaminated": false
-        },
-        "candidate_tasks": [
-          {
-            "title": "soạn bản đánh giá nhân sự",
-            "assignee": "Huỳnh",
-            "assignee_canonical": "Huỳnh",
-            "deadline": "2026-04-10",
-            "priority": null,
-            "confidence": 0.92,
-            "raw_confidence": 0.92,
-            "decision_score": 0.92,
-            "decision_band": "accept",
-            "abstained": false
-          }
-        ],
-        "candidate_task_count": 1,
-        "scored_task_count": 1
-      },
-      "model_provenance": {
-        "primary_calls": 3,
-        "fallback_calls": 0,
-        "rate_limited_calls": 0,
-        "models_used": {
-          "openai/gpt-oss-120b": 3
-        },
-        "contaminated": false
-      }
+      "error_types": [
+        "missed_task",
+        "missed_assignee",
+        "wrong_deadline",
+        "complete_miss"
+      ],
+      "is_correct": false,
+      "prediction_meta": {}
     },
     {
       "id": "eval-082",

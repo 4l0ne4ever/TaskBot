@@ -1,0 +1,74 @@
+[
+  {
+    "id": "dc-138",
+    "category": "conflict_deadline",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Email thread:\n\n[Email 1 — 2026-03-30]\nNgô Thanh Tùng, tài liệu thiết kế nộp trước thứ Sáu nhé.\n\n[Email 2 — 2026-04-01]\nCập nhật: tài liệu thiết kế cần nộp trước ngày mai.",
+    "metadata": {
+      "sent_at": "2026-04-01",
+      "sender": "pm@company.com",
+      "subject": "Re: deadline"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Tài liệu thiết kế",
+          "assignee": "Ngô Thanh Tùng",
+          "deadline": "2026-04-02",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "deadline_conflict",
+          "task_title": "Tài liệu thiết kế",
+          "source_a_value": "2026-04-03",
+          "source_b_value": "2026-04-02"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Friday (2026-04-03), Email 2: tomorrow (2026-04-02)",
+    "eval_existing_tasks": [
+      {
+        "title": "Tài liệu thiết kế",
+        "assignee": "Ngô Thanh Tùng",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-email-1",
+        "id": "eval-fixture-dc-138-email1"
+      }
+    ]
+  },
+  {
+    "id": "nl-195",
+    "category": "edge_noisy_long",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Chào team,\n\nCảm ơn mọi người đã tham gia buổi họp hôm qua. Mình tóm tắt lại một số điểm chính:\n\n- Doanh thu Q1 tăng 15% so với cùng kỳ năm ngoái\n- Chi phí marketing đã được tối ưu\n- Nhóm R&D đang nghiên cứu tính năng mới\n\nVề phần công việc, nhờ Huỳnh soạn bản đánh giá nhân sự trong 7 ngày tới nhé.\n\nNgoài ra, mình nhắc lại chính sách WFH: tối đa 2 ngày/tuần, cần báo trước 1 ngày.\n\n---\nNguyễn Văn Manager\nGiám đốc dự án | Công ty ABC\nĐT: 0912-345-678\nEmail: manager@abc.vn",
+    "metadata": {
+      "sent_at": "2026-04-03",
+      "sender": "manager@company.com",
+      "subject": "Meeting recap + action item"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Soạn bản đánh giá nhân sự",
+          "assignee": "Huỳnh",
+          "deadline": "2026-04-10",
+          "priority": null
+        }
+      ],
+      "conflicts": [],
+      "missing_fields": []
+    },
+    "annotation_notes": "1 task buried in long email with signature, disclaimer, noise; dl=sent+7",
+    "edge_tags": [
+      "noisy",
+      "long_text",
+      "signature"
+    ]
+  }
+]

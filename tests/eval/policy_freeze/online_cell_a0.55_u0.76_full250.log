@@ -172,3 +172,112 @@ Top error types:
 JSON:   tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250.json
 Report: tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250_report.md
 Redis LLM SLO snapshot (last N calls): {'sample_size': 1000, 'error_rate': 0.058, 'p50_ms': 1696.89, 'p95_ms': 12530.18, 'p99_ms': 13891.95, 'cost_total': 0.0, 'fallback_call_rate': 0.054, 'tier_counts': {'primary': 924, 'gemini': 22, 'fallback': 54}, 'rate_limit_kind_counts': {'tpd': 26, 'tpm': 32}, 'checked_at': '2026-05-09T08:14:41.307788+00:00', 'slo_targets': {'p50_lt_ms': 3000, 'p95_lt_ms': 10000, 'p99_lt_ms': 20000}, 'langsmith_ingest': {'attempts': 1739, 'success': 1739, 'failure_rate': 0.0}}
+EVAL_RUN_ID=20260506T211049Z-8b727001
+LANGSMITH_SESSION_NAME=eval-pipeline-20260506T211049Z-8b727001 (filter runs in LangSmith)
+  RESUME: 185 cached sample(s); running only missing ids.
+  [1/250] resume skip mx-189 (edge_mixed_lang) [cached]
+  [10/250] resume skip eval-070 (email_no_task) [cached]
+  [20/250] resume skip eval-031 (email_multi_task) [cached]
+  [30/250] resume skip fw-205 (edge_forwarded) [cached]
+  [40/250] resume skip eval-025 (email_simple) [cached]
+  [50/250] resume skip nn-248 (edge_nickname) [cached]
+  [60/250] resume skip eval-126 (doc_meeting_notes) [cached]
+  [70/250] resume skip eval-076 (email_no_task) [cached]
+  [80/250] resume skip tn-227 (edge_tricky_negative) [cached]
+  [90/250] resume skip nl-200 (edge_noisy_long) [cached]
+  [100/250] resume skip nl-197 (edge_noisy_long) [cached]
+  [110/250] resume skip eval-067 (email_no_task) [cached]
+  [120/250] resume skip fw-202 (edge_forwarded) [cached]
+  [130/250] resume skip nn-244 (edge_nickname) [cached]
+  [140/250] resume skip eval-173 (missing_assignee) [cached]
+  [150/250] resume skip sf-239 (edge_special_format) [cached]
+  [160/250] resume skip tn-228 (edge_tricky_negative) [cached]
+  [170/250] resume skip eval-127 (doc_meeting_notes) [cached]
+  [180/250] resume skip mx-183 (edge_mixed_lang) [cached]
+EVAL_STRICT_PRIMARY_MODEL_ONLY: strict Groq primary, no Gemini fallback, model=openai/gpt-oss-120b
+    pipeline rate-limited, waiting 10s (raw=10s, attempt 1)...
+    pipeline rate-limited, waiting 9s (raw=9s, attempt 2)...
+    pipeline rate-limited, waiting 5s (raw=5s, attempt 3)...
+    pipeline rate-limited, waiting 16s (raw=16s, attempt 4)...
+    pipeline rate-limited, waiting 16s (raw=16s, attempt 5)...
+  [190/250] processing tn-219 (edge_tricky_negative)...
+    pipeline rate-limited, waiting 13s (raw=13s, attempt 1)...
+    pipeline rate-limited, waiting 2s (raw=2s, attempt 2)...
+    pipeline rate-limited, waiting 13s (raw=13s, attempt 3)...
+  ABORT: stop requested (SIGTERM); will write partial JSON to --output then exit.
+  Wrote partial JSON (194/250 samples) -> tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250.json
+Method: pipeline  Model: openai/gpt-oss-120b  {'fallback_calls': 0, 'primary_calls_total': 343, 'fallback_calls_per_sample_total': 0, 'rate_limited_calls_total': 15, 'samples_using_fallback': 0, 'samples_total_with_provenance': 185, 'contaminated': False, 'model_mix': {'openai/gpt-oss-120b': 343}, 'strict_primary_mode': True}
+Samples: 194  Runtime errors: 9
+Title F1:       0.9647  (P=0.9809 R=0.9491)
+Assignee F1:    0.9576
+Deadline Exact: 0.8144
+Deadline Near:  0.8557
+Conflict F1:    0.8125
+Abstention: correct_abstain(empty GT)=1.0 false_answer(empty GT)=0.0 false_abstain(nonempty GT)=0.0613
+Calibration ECE: 0.1088  (confidence pairs: 205)
+Fully correct:  151/194 (77.8%)
+
+Top error types:
+  wrong_deadline: 27
+  missed_assignee: 15
+  missed_task: 10
+  complete_miss: 10
+  deadline_off_by_one: 8
+
+JSON:   tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250.json
+Report: tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250_report.md
+Redis LLM SLO snapshot (last N calls): {'sample_size': 1000, 'error_rate': 0.066, 'p50_ms': 1689.29, 'p95_ms': 12530.18, 'p99_ms': 13891.95, 'cost_total': 0.0, 'fallback_call_rate': 0.054, 'tier_counts': {'primary': 924, 'gemini': 22, 'fallback': 54}, 'rate_limit_kind_counts': {'tpm': 40, 'tpd': 26}, 'checked_at': '2026-05-10T03:07:59.313828+00:00', 'slo_targets': {'p50_lt_ms': 3000, 'p95_lt_ms': 10000, 'p99_lt_ms': 20000}, 'langsmith_ingest': {'attempts': 1777, 'success': 1777, 'failure_rate': 0.0}}
+EVAL_RUN_ID=20260506T211049Z-8b727001
+LANGSMITH_SESSION_NAME=eval-pipeline-20260506T211049Z-8b727001 (filter runs in LangSmith)
+  RESUME: 194 cached sample(s); running only missing ids.
+  [1/250] resume skip mx-189 (edge_mixed_lang) [cached]
+  [10/250] resume skip eval-070 (email_no_task) [cached]
+  [20/250] resume skip eval-031 (email_multi_task) [cached]
+  [30/250] resume skip fw-205 (edge_forwarded) [cached]
+  [40/250] resume skip eval-025 (email_simple) [cached]
+  [50/250] resume skip nn-248 (edge_nickname) [cached]
+  [60/250] resume skip eval-126 (doc_meeting_notes) [cached]
+  [70/250] resume skip eval-076 (email_no_task) [cached]
+  [80/250] resume skip tn-227 (edge_tricky_negative) [cached]
+  [90/250] resume skip nl-200 (edge_noisy_long) [cached]
+  [100/250] resume skip nl-197 (edge_noisy_long) [cached]
+  [110/250] resume skip eval-067 (email_no_task) [cached]
+  [120/250] resume skip fw-202 (edge_forwarded) [cached]
+  [130/250] resume skip nn-244 (edge_nickname) [cached]
+  [140/250] resume skip eval-173 (missing_assignee) [cached]
+  [150/250] resume skip sf-239 (edge_special_format) [cached]
+  [160/250] resume skip tn-228 (edge_tricky_negative) [cached]
+  [170/250] resume skip eval-127 (doc_meeting_notes) [cached]
+  [180/250] resume skip mx-183 (edge_mixed_lang) [cached]
+  [190/250] resume skip tn-219 (edge_tricky_negative) [cached]
+EVAL_STRICT_PRIMARY_MODEL_ONLY: strict Groq primary, no Gemini fallback, model=openai/gpt-oss-120b
+  [200/250] processing sf-237 (edge_special_format)...
+  ... batch cooldown 45.0s after 200/250 samples (rate-limit hygiene)
+  [210/250] processing eval-093 (email_ambiguous)...
+  [220/250] processing eval-075 (email_no_task)...
+  ... batch cooldown 45.0s after 220/250 samples (rate-limit hygiene)
+  [230/250] processing eval-020 (email_simple)...
+  [240/250] processing fw-207 (edge_forwarded)...
+  ... batch cooldown 45.0s after 240/250 samples (rate-limit hygiene)
+  [250/250] processing eval-045 (email_multi_task)...
+Method: pipeline  Model: openai/gpt-oss-120b  {'fallback_calls': 0, 'primary_calls_total': 443, 'fallback_calls_per_sample_total': 0, 'rate_limited_calls_total': 15, 'samples_using_fallback': 0, 'samples_total_with_provenance': 240, 'contaminated': False, 'model_mix': {'openai/gpt-oss-120b': 443}, 'strict_primary_mode': True}
+Samples: 250  Runtime errors: 10
+Title F1:       0.9663  (P=0.9847 R=0.9485)
+Assignee F1:    0.9501
+Deadline Exact: 0.8264
+Deadline Near:  0.8595
+Conflict F1:    0.8372
+Abstention: correct_abstain(empty GT)=1.0 false_answer(empty GT)=0.0 false_abstain(nonempty GT)=0.0619
+Calibration ECE: 0.1078  (confidence pairs: 258)
+Fully correct:  194/250 (77.6%)
+
+Top error types:
+  wrong_deadline: 33
+  missed_assignee: 23
+  missed_task: 13
+  complete_miss: 13
+  deadline_off_by_one: 8
+
+JSON:   tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250.json
+Report: tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250_report.md
+Redis LLM SLO snapshot (last N calls): {'sample_size': 1000, 'error_rate': 0.06, 'p50_ms': 1725.16, 'p95_ms': 12501.33, 'p99_ms': 13891.95, 'cost_total': 0.0, 'fallback_call_rate': 0.01, 'tier_counts': {'primary': 981, 'gemini': 9, 'fallback': 10}, 'rate_limit_kind_counts': {'tpm': 40, 'tpd': 20}, 'checked_at': '2026-05-10T03:33:19.607461+00:00', 'slo_targets': {'p50_lt_ms': 3000, 'p95_lt_ms': 10000, 'p99_lt_ms': 20000}, 'langsmith_ingest': {'attempts': 1921, 'success': 1921, 'failure_rate': 0.0}}

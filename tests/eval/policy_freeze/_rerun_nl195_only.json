@@ -1,0 +1,32 @@
+[
+  {
+    "id": "nl-195",
+    "category": "edge_noisy_long",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Chào team,\n\nCảm ơn mọi người đã tham gia buổi họp hôm qua. Mình tóm tắt lại một số điểm chính:\n\n- Doanh thu Q1 tăng 15% so với cùng kỳ năm ngoái\n- Chi phí marketing đã được tối ưu\n- Nhóm R&D đang nghiên cứu tính năng mới\n\nVề phần công việc, nhờ Huỳnh soạn bản đánh giá nhân sự trong 7 ngày tới nhé.\n\nNgoài ra, mình nhắc lại chính sách WFH: tối đa 2 ngày/tuần, cần báo trước 1 ngày.\n\n---\nNguyễn Văn Manager\nGiám đốc dự án | Công ty ABC\nĐT: 0912-345-678\nEmail: manager@abc.vn",
+    "metadata": {
+      "sent_at": "2026-04-03",
+      "sender": "manager@company.com",
+      "subject": "Meeting recap + action item"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Soạn bản đánh giá nhân sự",
+          "assignee": "Huỳnh",
+          "deadline": "2026-04-10",
+          "priority": null
+        }
+      ],
+      "conflicts": [],
+      "missing_fields": []
+    },
+    "annotation_notes": "1 task buried in long email with signature, disclaimer, noise; dl=sent+7",
+    "edge_tags": [
+      "noisy",
+      "long_text",
+      "signature"
+    ]
+  }
+]
