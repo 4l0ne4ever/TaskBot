@@ -49,6 +49,16 @@ from metrics import TITLE_MATCH_THRESHOLD  # noqa: E402
 ARTIFACT_SCHEMA_VERSION = 2
 ISOTONIC_MIN_N = 30
 
+# Separate threshold for calibration pair generation — must be stricter than
+# TITLE_MATCH_THRESHOLD (used for eval recall/precision).  Eval uses 0.6 to
+# accept minor wording differences; calibration needs to distinguish genuine
+# extractions from hallucinations, so a tighter similarity is required.
+# At 0.6 essentially all predicted tasks match some expected task, making the
+# (confidence, is_correct) pairs degenerate (all True → PAV maps to 1.0).
+# At 0.80 the accuracy signal is non-trivial: e.g. conf=0.80 → 82.6% accuracy
+# on the 250-sample eval, giving isotonic PAV real variance to fit against.
+CALIBRATION_MATCH_THRESHOLD = 0.80
+
 
 def _pairs_from_detail(detail: dict) -> list[tuple[float, bool]]:
     """Extract ``(confidence, is_correct)`` pairs from one eval sample.
@@ -56,7 +66,7 @@ def _pairs_from_detail(detail: dict) -> list[tuple[float, bool]]:
     For calibration we need both kinds of evidence:
 
     * A predicted task whose best-matching expected task is similar enough
-      (``title_sim >= TITLE_MATCH_THRESHOLD``) is a true positive → ``True``.
+      (``title_sim >= CALIBRATION_MATCH_THRESHOLD``) is a true positive → ``True``.
     * A predicted task with no sufficiently-similar expected (including the
       case where ``expected_tasks`` is empty for ``email_no_task`` samples)
       is a false positive → ``False``. **This is the signal the prior
@@ -66,6 +76,11 @@ def _pairs_from_detail(detail: dict) -> list[tuple[float, bool]]:
     Expected tasks the model did *not* emit are omitted here — calibration
     acts on the model's own confidence and those rows simply carry no
     confidence to calibrate.
+
+    Note: ``CALIBRATION_MATCH_THRESHOLD`` (0.80) is intentionally stricter than
+    the eval metric ``TITLE_MATCH_THRESHOLD`` (0.60). The calibration purpose is
+    different — we need to separate hallucinated tasks from real ones, not score
+    near-synonymous titles as equivalent for F1 purposes.
     """
     exp = detail.get("expected_tasks") or []
     pred = detail.get("predicted_tasks") or []
@@ -84,7 +99,7 @@ def _pairs_from_detail(detail: dict) -> list[tuple[float, bool]]:
             sim = _title_sim_local(e.get("title", ""), p_title)
             if sim > best_sim:
                 best_sim = sim
-        is_correct = best_sim >= TITLE_MATCH_THRESHOLD
+        is_correct = best_sim >= CALIBRATION_MATCH_THRESHOLD
         out.append((float(c), bool(is_correct)))
     return out
 

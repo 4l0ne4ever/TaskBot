@@ -58,6 +58,11 @@ logger = logging.getLogger(__name__)
 CANONICAL_MATCH_THRESHOLD = 0.85
 
 POOL_KEY_TEMPLATE = "user:{user_id}:assignee_pool"
+# Companion exact-match index: Redis HASH mapping cleaned_canonical → canonical.
+# Populated in learn() alongside the SADD; checked first in resolve() so a
+# repeated reference to the same person costs one HGET instead of a full
+# SMEMBERS + O(n) score scan.  Shares the same TTL as the pool set.
+POOL_EXACT_KEY_TEMPLATE = "user:{user_id}:assignee_exact"
 # How long to keep an assignee pool when a user is inactive. 90 days matches
 # the default OAuth refresh window so pools don't linger after a true churn.
 POOL_TTL_SECONDS = 90 * 24 * 3600
@@ -78,7 +83,7 @@ class AssigneeCanonical:
     raw: str
     canonical: str
     similarity: float
-    source: str  # "exact" | "pool_match" | "passthrough"
+    source: str  # "exact" | "pool_match" | "passthrough" | "cold_start"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -187,6 +192,9 @@ class AssigneeResolver:
     def _pool_key(self, user_id: str) -> str:
         return POOL_KEY_TEMPLATE.format(user_id=user_id)
 
+    def _exact_key(self, user_id: str) -> str:
+        return POOL_EXACT_KEY_TEMPLATE.format(user_id=user_id)
+
     def _client(self) -> redis.Redis | None:
         if self._redis is not None:
             return self._redis
@@ -197,18 +205,40 @@ class AssigneeResolver:
             logger.debug("assignee_resolver: redis unavailable: %s", exc)
             return None
 
-    def _load_pool(self, user_id: str | None) -> list[str]:
+    def _load_pool(self, user_id: str | None) -> tuple[list[str], bool]:
+        """Return ``(pool_entries, is_cold_start)``.
+
+        ``is_cold_start`` is True when Redis is reachable AND the pool is
+        genuinely empty — the user has never submitted a task before.  It is
+        False when Redis is unavailable (we cannot distinguish cold-start from
+        transient failure) or when the pool has entries.  Callers use this to
+        emit ``source="cold_start"`` vs ``source="passthrough"`` on a no-match.
+        """
         if not user_id:
-            return []
+            return [], False
         client = self._client()
         if client is None:
-            return []
+            return [], False
         try:
             members = client.smembers(self._pool_key(user_id))
         except Exception as exc:
             logger.debug("assignee_resolver: smembers failed for %s: %s", user_id, exc)
-            return []
-        return [m for m in members if isinstance(m, str) and m.strip()]
+            return [], False
+        entries = [m for m in members if isinstance(m, str) and m.strip()]
+        is_cold_start = len(entries) == 0
+        return entries, is_cold_start
+
+    def _exact_lookup(self, user_id: str, cleaned_raw: str) -> str | None:
+        """O(1) Redis HGET for exact canonical match.  Returns the stored
+        canonical string, or ``None`` when no entry exists or Redis is down."""
+        client = self._client()
+        if client is None:
+            return None
+        try:
+            return client.hget(self._exact_key(user_id), cleaned_raw) or None
+        except Exception as exc:
+            logger.debug("assignee_resolver: hget failed for %s: %s", user_id, exc)
+            return None
 
     # ---- Core API ----------------------------------------------------------
 
@@ -233,7 +263,27 @@ class AssigneeResolver:
             return None
 
         cleaned_raw = raw.strip()
-        candidates = list(pool) if pool is not None else self._load_pool(user_id)
+        cleaned_lower = _clean(cleaned_raw)
+
+        # F.2 — O(1) exact-match path: check the companion hash before loading
+        # the full pool.  Only applies when user_id is known and pool is not
+        # injected (injected pool is used by tests/eval; no Redis involved).
+        if pool is None and user_id:
+            hit = self._exact_lookup(user_id, cleaned_lower)
+            if hit is not None:
+                return AssigneeCanonical(
+                    raw=cleaned_raw,
+                    canonical=hit,
+                    similarity=1.0,
+                    source="exact",
+                )
+
+        candidates: list[str]
+        is_cold_start = False
+        if pool is not None:
+            candidates = list(pool)
+        else:
+            candidates, is_cold_start = self._load_pool(user_id)
 
         best: tuple[float, str] | None = None
         for candidate in candidates:
@@ -249,14 +299,17 @@ class AssigneeResolver:
                 source="exact" if best[0] >= 1.0 - 1e-9 else "pool_match",
             )
 
-        # No match — emit raw as-is. Caller decides whether to learn (typically
-        # production ``save_tasks_service`` does so after persist to avoid
-        # learning transient / abstained extractions).
+        # No pool match — emit raw as-is.  F.3: distinguish genuine cold-start
+        # (pool empty + Redis reachable → this is the first time we see any
+        # name for this user) from passthrough (pool has entries but none
+        # matched, or Redis was unavailable).  Downstream can use cold_start to
+        # prioritise learning and flag confidence accordingly.
+        no_match_source = "cold_start" if is_cold_start else "passthrough"
         return AssigneeCanonical(
             raw=cleaned_raw,
             canonical=cleaned_raw,
             similarity=1.0,
-            source="passthrough",
+            source=no_match_source,
         )
 
     def learn(self, user_id: str | None, canonical: str | None) -> bool:
@@ -277,12 +330,19 @@ class AssigneeResolver:
         if client is None:
             return False
         try:
-            key = self._pool_key(user_id)
-            added = client.sadd(key, cleaned)
-            client.expire(key, POOL_TTL_SECONDS)
-            return bool(added)
+            pool_key = self._pool_key(user_id)
+            exact_key = self._exact_key(user_id)
+            pipe = client.pipeline()
+            pipe.sadd(pool_key, cleaned)
+            pipe.expire(pool_key, POOL_TTL_SECONDS)
+            # F.2: populate exact-match index so subsequent resolve() calls for
+            # this exact cleaned form skip the full SMEMBERS + O(n) scan.
+            pipe.hset(exact_key, _clean(cleaned), cleaned)
+            pipe.expire(exact_key, POOL_TTL_SECONDS)
+            results = pipe.execute()
+            return bool(results[0])  # sadd result: 1 = new member, 0 = existed
         except Exception as exc:
-            logger.debug("assignee_resolver: sadd failed for %s: %s", user_id, exc)
+            logger.debug("assignee_resolver: learn failed for %s: %s", user_id, exc)
             return False
 
     def list_pool(self, user_id: str | None) -> list[str]:

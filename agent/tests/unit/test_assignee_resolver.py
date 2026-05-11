@@ -20,11 +20,16 @@ from app.services.assignee_resolver import (
 
 
 class _FakeRedis:
-    """Minimum stub for the ops ``resolver`` uses (``smembers``, ``sadd``,
-    ``expire``). Keeps per-key sets in memory so each test can own its pool."""
+    """Minimum stub for the ops ``resolver`` uses.
+
+    Now covers pipeline(), hget(), hset() in addition to smembers/sadd/expire
+    so that the F.2 exact-match hash and the pipeline-based learn() work in
+    tests without a real Redis process.
+    """
 
     def __init__(self) -> None:
         self.store: dict[str, set[str]] = {}
+        self.hash_store: dict[str, dict[str, str]] = {}
         self.expiries: dict[str, int] = {}
 
     def smembers(self, key: str) -> set[str]:
@@ -40,6 +45,48 @@ class _FakeRedis:
     def expire(self, key: str, ttl: int) -> bool:
         self.expiries[key] = ttl
         return True
+
+    def hget(self, key: str, field: str) -> str | None:
+        return self.hash_store.get(key, {}).get(field)
+
+    def hset(self, key: str, field: str, value: str) -> int:
+        h = self.hash_store.setdefault(key, {})
+        is_new = field not in h
+        h[field] = value
+        return int(is_new)
+
+    def pipeline(self) -> "_FakePipeline":
+        return _FakePipeline(self)
+
+
+class _FakePipeline:
+    def __init__(self, r: _FakeRedis) -> None:
+        self._r = r
+        self._ops: list[tuple] = []
+
+    def sadd(self, key: str, *values: str) -> "_FakePipeline":
+        self._ops.append(("sadd", key, values))
+        return self
+
+    def expire(self, key: str, ttl: int) -> "_FakePipeline":
+        self._ops.append(("expire", key, ttl))
+        return self
+
+    def hset(self, key: str, field: str, value: str) -> "_FakePipeline":
+        self._ops.append(("hset", key, field, value))
+        return self
+
+    def execute(self) -> list:
+        results = []
+        for op in self._ops:
+            if op[0] == "sadd":
+                results.append(self._r.sadd(op[1], *op[2]))
+            elif op[0] == "expire":
+                results.append(self._r.expire(op[1], op[2]))
+            elif op[0] == "hset":
+                results.append(self._r.hset(op[1], op[2], op[3]))
+        self._ops.clear()
+        return results
 
 
 # ---------------------------------------------------------------------------
@@ -114,14 +161,15 @@ def test_resolver_returns_none_for_empty_input():
 
 
 def test_resolver_passthrough_when_pool_empty():
-    """No pool match = emit raw verbatim with ``source="passthrough"``. This
-    is the signal for ops that the pool didn't help, so prompt / LLM output
-    quality matters for this sample."""
+    """F.3 cold-start: when the pool is genuinely empty and Redis is reachable,
+    the resolver emits ``source="cold_start"`` to signal first-time encounter.
+    This is distinct from ``source="passthrough"`` (pool has entries but none
+    matched), allowing save_tasks_service to prioritise learning."""
     resolver, _ = _resolver_with()
     result = resolver.resolve("Hương", user_id="u1")
     assert isinstance(result, AssigneeCanonical)
     assert result.canonical == "Hương"
-    assert result.source == "passthrough"
+    assert result.source == "cold_start"
 
 
 def test_resolver_matches_pool_entry():
@@ -238,7 +286,8 @@ def test_normalize_tasks_stamps_assignee_canonical_passthrough(monkeypatch):
     assert len(tasks) == 2
     assert tasks[0]["assignee"] == "Bạn Hương"  # raw preserved for UI
     assert tasks[0]["assignee_canonical"] == "Bạn Hương"
-    assert tasks[0]["assignee_canonical_source"] == "passthrough"
+    # F.3: pool is genuinely empty (Redis reachable, no prior learns) → cold_start
+    assert tasks[0]["assignee_canonical_source"] == "cold_start"
     # Task with no assignee: None in both raw and canonical — we don't invent
     # a canonical just because the field is empty.
     assert tasks[1]["assignee"] is None
