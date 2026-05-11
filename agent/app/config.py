@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     langsmith_project: str = "taskExtractor"
     langsmith_api_url: str = "https://api.smith.langchain.com"
     langsmith_ingest_timeout_seconds: float = 5.0
+    langsmith_ingest_max_retries: int = 3
+    langsmith_ingest_retry_backoff_base_seconds: float = 1.0
     groq_input_cost_per_million_tokens: float = 0.0
     groq_output_cost_per_million_tokens: float = 0.0
     max_tasks_per_document: int = 8
@@ -73,7 +75,7 @@ class Settings(BaseSettings):
     task_reuse_similarity_threshold: float = 0.85
     conflict_title_similarity_threshold: float = 0.7
     max_conflict_checks_per_task: int = 5
-    confidence_abstain_threshold: float = 0.65
+    confidence_abstain_threshold: float = 0.55
     confidence_uncertain_threshold: float = 0.76
     pipeline_policy_version: str = "v1"
     mcp_auth_revoke_streak_threshold: int = 3

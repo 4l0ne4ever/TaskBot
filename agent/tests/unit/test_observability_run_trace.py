@@ -44,6 +44,7 @@ def captured(monkeypatch: pytest.MonkeyPatch) -> _CapturingRedis:
 @pytest.fixture(autouse=True)
 def _reset_warned_once() -> None:
     obs._warned_once.clear()
+    obs._redis_unavailable = False
 
 
 def _task() -> dict:

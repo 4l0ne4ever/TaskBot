@@ -18,7 +18,7 @@ Return a single JSON object: { "tasks": [ ... ] }. Each task object must contain
 - "deadline": ISO date YYYY-MM-DD or null (must match the resolved calendar day when you can compute one)
 - "deadline_v2": object with:
   - "type": "exact" | "range" | "relative" | "none"
-  - "iso": exact date or null
+  - "iso": exact date YYYY-MM-DD or null — for weekday phrases (e.g. "Friday", "thứ Sáu"), set this to null and use "week_offset" instead; the pipeline computes the date
   - "start": range start or null
   - "end": range end or null
   - "text": original deadline phrase or null
@@ -26,6 +26,7 @@ Return a single JSON object: { "tasks": [ ... ] }. Each task object must contain
   - "confidence": float 0..1
   - "source": "llm"
   - "is_ambiguous": boolean
+  - "week_offset": "this" | "next" | "after_next" | "unknown" | null — for weekday phrases only: "this" = nearest occurrence on or after reference date, "next" = one week further, "after_next" = two weeks further, "unknown" = ambiguous. Set null for non-weekday phrases (absolute dates, "in N days", "tomorrow").
 - "priority": one of "high" | "medium" | "low" | null
 - "confidence": float 0..1 for whole task extraction confidence
 - "uncertainty": null or {"type":"ambiguous"|"missing"|"conflict","reason":string}
@@ -40,7 +41,7 @@ Confidence scoring — use this scale precisely:
 
 Deadline rules:
 - Metadata "Date" below shows the reference date with its day-of-week in parentheses. Use both the calendar date AND day-of-week to resolve relative phrases accurately.
-- For a named weekday: from the reference date, compute the one calendar day that matches the full phrase, including whether the source says the current occurrence or the following occurrence. If the phrase is ambiguous between two dates, keep the original phrase in "deadline_v2.text", set is_ambiguous true, and lower confidence.
+- For a named weekday (e.g. "Friday", "thứ Sáu", "Monday"): set "week_offset" to "this" when the phrase refers to the nearest upcoming occurrence, or "next" when it means the following week (e.g. "next Friday", "thứ Sáu tới", "thứ Sáu sau"). Set "iso" to null — the pipeline computes the exact date from "week_offset" and the weekday name in "text". If the occurrence cannot be determined, set "week_offset" to "unknown", "is_ambiguous" to true, and lower confidence.
 - "trong N ngày" / "within N days" / "in N days": add N calendar days to the reference date.
 - If you can resolve to one calendar day, set "deadline_v2"."iso" to that YYYY-MM-DD, set "deadline" to the same string, set "type" to "exact" if the text names a specific calendar day, or "relative" if the text is phrased relatively but you still resolved the day from the reference date.
 - If the phrase is a range, use "type":"range", fill "start"/"end" when possible, and set "iso" to the end day if a single day is the real due boundary.

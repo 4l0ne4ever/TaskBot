@@ -56,12 +56,7 @@
     "abort_after_samples": null,
     "resume_source_path": "/Users/duongcongthuyet/Downloads/workspace/AI /taskExtractor/tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250.json",
     "resume_cached_samples_at_start": 194,
-    "langsmith_hint": "Each LLM call is logged as groq_chat_completion; each document as pipeline_run_trace. Filter by session name above; per-sample via inputs.sample_id.",
-    "runtime_rerun_merge_at_utc": "2026-05-10T05:09:42Z",
-    "runtime_rerun_source": "/Users/duongcongthuyet/Downloads/workspace/AI /taskExtractor/tests/eval/policy_freeze/_rerun_nl195_only_out.json",
-    "runtime_rerun_replaced_ids_sorted": [
-      "nl-195"
-    ]
+    "langsmith_hint": "Each LLM call is logged as groq_chat_completion; each document as pipeline_run_trace. Filter by session name above; per-sample via inputs.sample_id."
   },
   "aborted_early": false,
   "abort_reason": null,

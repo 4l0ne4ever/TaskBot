@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import time
 import logging
 from datetime import UTC, datetime
@@ -63,6 +64,33 @@ def _mark_redis_unavailable(exc: BaseException) -> None:
     )
 
 
+def probe_redis_health() -> bool:
+    """Test the observability Redis connection eagerly at startup.
+
+    Call once when the pipeline or worker initialises so a misconfigured
+    REDIS_URL (wrong host port, Docker/OrbStack publish port mismatch) is
+    flagged immediately with an actionable log message rather than silently
+    dropping every telemetry write until the first one fails.
+
+    Sets the module-level ``_redis_unavailable`` flag and returns
+    ``False`` when unreachable; returns ``True`` if Redis responded or if
+    observability is disabled (disabled ≠ broken).
+    """
+    global _redis_unavailable
+    if not settings.redis_observability_enabled:
+        return True
+    if _redis_unavailable:
+        return False
+    try:
+        client = _redis_client()
+        client.ping()
+        logger.info("observability: Redis health probe OK (%s)", settings.redis_url)
+        return True
+    except (redis.ConnectionError, redis.TimeoutError, OSError) as exc:
+        _mark_redis_unavailable(exc)
+        return False
+
+
 def _langsmith_session_name() -> str:
     """Eval can set LANGSMITH_SESSION_NAME so runs group in LangSmith apart from production."""
     return (os.getenv("LANGSMITH_SESSION_NAME") or "").strip() or settings.langsmith_project
@@ -77,7 +105,11 @@ def _redis_client() -> redis.Redis:
 
 
 def _redis_store(fn) -> None:
-    """Run ``fn(redis_client)`` unless Redis is disabled or already marked unavailable."""
+    """Run ``fn(redis_client)`` unless Redis is disabled or already marked unavailable.
+
+    Catches all exceptions so observability never crashes the pipeline — any
+    failure from the Redis client or the callback is treated as unavailability.
+    """
     global _redis_unavailable
     if _redis_unavailable:
         return
@@ -86,6 +118,8 @@ def _redis_store(fn) -> None:
     try:
         fn(_redis_client())
     except (redis.ConnectionError, redis.TimeoutError, OSError) as exc:
+        _mark_redis_unavailable(exc)
+    except Exception as exc:
         _mark_redis_unavailable(exc)
 
 
@@ -141,6 +175,20 @@ def _record_langsmith_ingest_event(
 
 
 def _post_langsmith_run(payload: dict[str, Any]) -> None:
+    """POST one run record to LangSmith with bounded exponential-backoff retry.
+
+    Retry policy (configurable via Settings):
+    - ``langsmith_ingest_max_retries`` attempts total (default 3).
+    - Exponential backoff with full jitter between retries so concurrent
+      pipeline runs don't all fire at the same time after a 429 burst:
+      ``delay = base * 2^(attempt-1) + uniform(0, base)``.
+    - Retry on 5xx and 429 (transient server-side errors).
+    - No retry on other 4xx (permanent client errors — retrying is useless).
+    - On retry exhaustion a ``retry_exhausted`` counter is incremented in
+      ``obs:langsmith:ingest:counts`` so the SLO snapshot surfaces it.
+    - Pipeline never blocks on LangSmith: the method returns normally
+      regardless of outcome — tracing is a side channel.
+    """
     if not settings.langsmith_tracing or not settings.langsmith_api_key:
         return
     run_name = str(payload.get("name") or "unknown")
@@ -150,33 +198,54 @@ def _post_langsmith_run(payload: dict[str, Any]) -> None:
     }
     url = f"{settings.langsmith_api_url.rstrip('/')}/runs"
     timeout = float(settings.langsmith_ingest_timeout_seconds)
-    try:
-        with httpx.Client(timeout=timeout) as client:
-            resp = client.post(url, headers=headers, json=payload)
-        if 200 <= resp.status_code < 300:
-            _record_langsmith_ingest_event(outcome="success", run_name=run_name)
-        else:
-            snippet = (resp.text or "")[:200]
-            _record_langsmith_ingest_event(
-                outcome="http_error",
-                run_name=run_name,
-                status_code=resp.status_code,
-                detail=snippet or None,
-            )
-    except httpx.TimeoutException:
-        _record_langsmith_ingest_event(outcome="transport_error", run_name=run_name, detail="timeout")
-    except httpx.RequestError as exc:
+    max_retries = max(1, int(settings.langsmith_ingest_max_retries))
+    backoff_base = max(0.1, float(settings.langsmith_ingest_retry_backoff_base_seconds))
+
+    last_outcome = "transport_error"
+    last_status_code: int | None = None
+    last_detail: str | None = None
+    succeeded = False
+
+    for attempt in range(max_retries):
+        if attempt > 0:
+            delay = backoff_base * (2 ** (attempt - 1)) + random.uniform(0, backoff_base)
+            time.sleep(delay)
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                resp = client.post(url, headers=headers, json=payload)
+            if 200 <= resp.status_code < 300:
+                _record_langsmith_ingest_event(outcome="success", run_name=run_name)
+                succeeded = True
+                break
+            last_status_code = resp.status_code
+            last_detail = (resp.text or "")[:200] or None
+            last_outcome = "http_error"
+            # Permanent client errors — no point retrying
+            if resp.status_code != 429 and 400 <= resp.status_code < 500:
+                break
+        except httpx.TimeoutException:
+            last_outcome = "transport_error"
+            last_detail = "timeout"
+        except httpx.RequestError as exc:
+            last_outcome = "transport_error"
+            last_detail = type(exc).__name__
+        except Exception as exc:
+            last_outcome = "transport_error"
+            last_detail = type(exc).__name__
+
+    if not succeeded:
         _record_langsmith_ingest_event(
-            outcome="transport_error",
+            outcome=last_outcome,
             run_name=run_name,
-            detail=type(exc).__name__,
+            status_code=last_status_code,
+            detail=last_detail,
         )
-    except Exception as exc:
-        _record_langsmith_ingest_event(
-            outcome="transport_error",
-            run_name=run_name,
-            detail=type(exc).__name__,
-        )
+        if max_retries > 1:
+            def _inc_exhausted(r: redis.Redis) -> None:
+                pipe = r.pipeline()
+                pipe.hincrby("obs:langsmith:ingest:counts", "retry_exhausted", 1)
+                pipe.execute()
+            _redis_store(_inc_exhausted)
 
 
 def record_llm_call(
@@ -434,45 +503,35 @@ def _langsmith_ingest_snapshot() -> dict[str, Any]:
     }
 
 
+def _empty_slo_snapshot() -> dict[str, Any]:
+    ls_snap = _langsmith_ingest_snapshot()
+    return {
+        "sample_size": 0,
+        "error_rate": 0.0,
+        "p50_ms": 0,
+        "p95_ms": 0,
+        "p99_ms": 0,
+        "cost_total": 0.0,
+        "langsmith_ingest": ls_snap,
+        "langsmith_post_fail_rate": ls_snap.get("failure_rate", 0.0),
+    }
+
+
 def calculate_slo_snapshot() -> dict[str, Any]:
     if _redis_unavailable or not settings.redis_observability_enabled:
-        return {
-            "sample_size": 0,
-            "error_rate": 0.0,
-            "p50_ms": 0,
-            "p95_ms": 0,
-            "p99_ms": 0,
-            "cost_total": 0.0,
-            "langsmith_ingest": _langsmith_ingest_snapshot(),
-        }
+        return _empty_slo_snapshot()
     try:
         r = _redis_client()
         rows = r.lrange("obs:llm:calls", 0, 999)
     except (redis.ConnectionError, redis.TimeoutError, OSError):
-        return {
-            "sample_size": 0,
-            "error_rate": 0.0,
-            "p50_ms": 0,
-            "p95_ms": 0,
-            "p99_ms": 0,
-            "cost_total": 0.0,
-            "langsmith_ingest": _langsmith_ingest_snapshot(),
-        }
+        return _empty_slo_snapshot()
     except Exception as exc:
         _warn_observability_once(
             "redis_slo_snapshot",
             "observability: cannot read SLO telemetry from Redis (err=%s)",
             type(exc).__name__,
         )
-        return {
-            "sample_size": 0,
-            "error_rate": 0.0,
-            "p50_ms": 0,
-            "p95_ms": 0,
-            "p99_ms": 0,
-            "cost_total": 0.0,
-            "langsmith_ingest": _langsmith_ingest_snapshot(),
-        }
+        return _empty_slo_snapshot()
 
     calls = []
     for raw in rows:
@@ -481,9 +540,7 @@ def calculate_slo_snapshot() -> dict[str, Any]:
         except Exception:
             continue
     if not calls:
-        base = {"sample_size": 0, "error_rate": 0.0, "p50_ms": 0, "p95_ms": 0, "p99_ms": 0, "cost_total": 0.0}
-        base["langsmith_ingest"] = _langsmith_ingest_snapshot()
-        return base
+        return _empty_slo_snapshot()
 
     lats = sorted(float(c.get("latency_ms") or 0) for c in calls)
     errors = sum(1 for c in calls if c.get("error"))
@@ -507,6 +564,7 @@ def calculate_slo_snapshot() -> dict[str, Any]:
         idx = int((len(lats) - 1) * p)
         return round(lats[idx], 2)
 
+    ls_snap = _langsmith_ingest_snapshot()
     return {
         "sample_size": len(calls),
         "error_rate": round(errors / len(calls), 4),
@@ -523,5 +581,7 @@ def calculate_slo_snapshot() -> dict[str, Any]:
         "rate_limit_kind_counts": rl_kind_counts,
         "checked_at": datetime.now(UTC).isoformat(),
         "slo_targets": {"p50_lt_ms": 3000, "p95_lt_ms": 10000, "p99_lt_ms": 20000},
-        "langsmith_ingest": _langsmith_ingest_snapshot(),
+        "langsmith_ingest": ls_snap,
+        # Convenience alias so callers don't need to dig into the nested dict.
+        "langsmith_post_fail_rate": ls_snap.get("failure_rate", 0.0),
     }

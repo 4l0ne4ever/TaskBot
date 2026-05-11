@@ -14,8 +14,10 @@ CANONICAL_DEADLINE_KEYS = (
     "confidence",
     "source",
     "is_ambiguous",
+    "week_offset",
 )
 _VALID_DEADLINE_TYPES = ("exact", "range", "relative", "none")
+_VALID_WEEK_OFFSETS = ("this", "next", "after_next", "unknown")
 
 
 def _is_iso_date(value: str | None) -> bool:
@@ -104,6 +106,16 @@ def _coerce_deadline_v2(d: object) -> dict | None:
             out["type"] = "none"
     else:
         return None
+
+    wo = d.get("week_offset")
+    if wo in _VALID_WEEK_OFFSETS:
+        out["week_offset"] = wo
+    elif wo is None:
+        out["week_offset"] = None
+    else:
+        # Unknown string from LLM — treat as ambiguous rather than rejecting
+        out["week_offset"] = "unknown"
+
     return out
 
 

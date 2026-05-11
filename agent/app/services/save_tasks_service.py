@@ -154,6 +154,7 @@ async def async_save_tasks(state: PipelineState) -> dict:
                         best.title = tkey
                         best.description = vt.get("description") if isinstance(vt.get("description"), str) else None
                         best.assignee = vt.get("assignee") if isinstance(vt.get("assignee"), str) else None
+                        best.assignee_canonical = vt.get("assignee_canonical") if isinstance(vt.get("assignee_canonical"), str) else None
                         best.deadline = _parse_deadline(vt.get("deadline"))
                         best.deadline_v2 = vt.get("deadline_v2") if isinstance(vt.get("deadline_v2"), dict) else None
                         best.priority = vt.get("priority") if isinstance(vt.get("priority"), str) else None
@@ -172,6 +173,7 @@ async def async_save_tasks(state: PipelineState) -> dict:
                             title=tkey,
                             description=vt.get("description") if isinstance(vt.get("description"), str) else None,
                             assignee=vt.get("assignee") if isinstance(vt.get("assignee"), str) else None,
+                            assignee_canonical=vt.get("assignee_canonical") if isinstance(vt.get("assignee_canonical"), str) else None,
                             deadline=_parse_deadline(vt.get("deadline")),
                             deadline_v2=vt.get("deadline_v2") if isinstance(vt.get("deadline_v2"), dict) else None,
                             priority=vt.get("priority") if isinstance(vt.get("priority"), str) else None,

@@ -69,6 +69,33 @@ def _next_weekday_on_or_after(ref: date, target_weekday: int) -> date:
     return ref + timedelta(days=delta)
 
 
+def _apply_week_offset(base: date, week_offset: str | None) -> date:
+    """Shift a base weekday date by the semantic week-offset supplied by the LLM.
+
+    ``base`` is the nearest occurrence of the target weekday on or after
+    the anchor date (``_next_weekday_on_or_after``). The offset then
+    specifies *which* occurrence the author intended:
+
+    - ``"this"`` or ``None`` → the nearest occurrence (``base`` unchanged).
+    - ``"next"``             → the following week (+7 days).
+    - ``"after_next"``       → two weeks later (+14 days).
+    - ``"unknown"``          → semantics unclear; return ``base`` unchanged
+      so the pipeline's plausibility validator and confidence score can
+      drive the final accept/abstain decision.
+
+    Research basis: this mirrors the "week_offset" intent field proposed
+    in the D.2 roadmap item (docs/quality-issues-tracker.md) which treats
+    the LLM as a semantic-intent provider and uses deterministic arithmetic
+    for the final calendar computation. The closed set of offsets is
+    intentionally minimal — we do not enumerate phrases.
+    """
+    if week_offset == "next":
+        return base + timedelta(days=7)
+    if week_offset == "after_next":
+        return base + timedelta(days=14)
+    return base
+
+
 def _detect_weekday_in_text(low: str) -> int | None:
     for name, w in _WEEKDAY_NAME_TO_INT.items():
         if name in low:
@@ -170,6 +197,8 @@ def enrich_deadline_v2_with_symbolic_iso(deadline_v2: dict[str, Any], anchor: da
             out["type"] = "relative"
         existing_iso = None
 
+    week_offset = out.get("week_offset")
+
     if existing_iso and anchor:
         # For closed-set non-weekday phrases (e.g. tomorrow / in N days),
         # any concrete ISO disagreement is arithmetic error, not language
@@ -183,19 +212,44 @@ def enrich_deadline_v2_with_symbolic_iso(deadline_v2: dict[str, Any], anchor: da
             existing_iso = symbolic
         expected_wd = _expected_weekday_from_phrase(out)
         if expected_wd is not None:
-            actual_wd = _iso_weekday(existing_iso)
-            if actual_wd is not None and actual_wd != expected_wd:
-                corrected = _next_weekday_on_or_after(anchor, expected_wd).isoformat()
+            # When the LLM provided an explicit week_offset ("next" / "after_next"),
+            # use it for full arithmetic rather than just checking day-of-week
+            # correctness. This fixes the systematic "thứ Sáu tới" error where
+            # the nearest Friday is on-or-after the anchor but "tới/next" means
+            # the occurrence the following week.
+            if week_offset in ("next", "after_next"):
+                base = _next_weekday_on_or_after(anchor, expected_wd)
+                corrected = _apply_week_offset(base, week_offset).isoformat()
                 if _is_plausible(corrected, anchor):
                     out["iso"] = corrected
                     if out.get("type") == "exact":
                         out["type"] = "relative"
                     existing_iso = corrected
+            else:
+                # No explicit offset ("this" / None / "unknown") — fall back to
+                # the original weekday consistency gate (correct arithmetic
+                # errors while leaving language-level choices to the LLM).
+                actual_wd = _iso_weekday(existing_iso)
+                if actual_wd is not None and actual_wd != expected_wd:
+                    corrected = _next_weekday_on_or_after(anchor, expected_wd).isoformat()
+                    if _is_plausible(corrected, anchor):
+                        out["iso"] = corrected
+                        if out.get("type") == "exact":
+                            out["type"] = "relative"
+                        existing_iso = corrected
 
     if out.get("iso") or not anchor:
         return out
+
+    # iso is missing — try the closed-set resolver, then apply week_offset
     candidate = try_resolve_deadline_iso(out, anchor)
-    if not candidate or not _is_plausible(candidate, anchor):
+    if not candidate:
+        return out
+    expected_wd = _expected_weekday_from_phrase(out)
+    if expected_wd is not None and week_offset in ("next", "after_next"):
+        base = _next_weekday_on_or_after(anchor, expected_wd)
+        candidate = _apply_week_offset(base, week_offset).isoformat()
+    if not _is_plausible(candidate, anchor):
         return out
     out["iso"] = candidate
     if out.get("type") in (None, "none", "relative"):

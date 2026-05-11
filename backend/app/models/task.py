@@ -18,6 +18,7 @@ class Task(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     assignee: Mapped[str | None] = mapped_column(Text, nullable=True)
+    assignee_canonical: Mapped[str | None] = mapped_column(Text, nullable=True, index=False)
     deadline: Mapped[str | None] = mapped_column(Date, nullable=True)
     deadline_v2: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     priority: Mapped[str | None] = mapped_column(Text, nullable=True)

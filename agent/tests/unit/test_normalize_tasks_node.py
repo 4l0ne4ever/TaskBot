@@ -253,3 +253,69 @@ def test_normalize_tasks_still_rejects_unparseable_iso() -> None:
         }
     )
     assert result["normalized_tasks"] == []
+
+
+def test_normalize_tasks_passes_week_offset_through_coercion() -> None:
+    """week_offset from the LLM must survive _coerce_deadline_v2 so the
+    temporal_resolve module can apply the correct arithmetic (Q-01 / D.2)."""
+    result = normalize_tasks(
+        {
+            "extracted_tasks": [
+                {
+                    "title": "Review Q1 report",
+                    "assignee": "Hoàng",
+                    "deadline_v2": {
+                        "type": "relative",
+                        "iso": None,
+                        "start": None,
+                        "end": None,
+                        "text": "thứ Sáu tới",
+                        "resolved_from": "thứ Sáu tới",
+                        "confidence": 0.88,
+                        "source": "llm",
+                        "is_ambiguous": False,
+                        "week_offset": "next",
+                    },
+                    "confidence": 0.88,
+                }
+            ],
+            "errors": [],
+            "metadata": {"sent_at": "2026-04-08"},
+        }
+    )
+    assert len(result["normalized_tasks"]) == 1
+    dv2 = result["normalized_tasks"][0]["deadline_v2"]
+    assert dv2["week_offset"] == "next"
+    # Anchor 2026-04-08 (Wed); nearest Friday = 2026-04-10; +7 = 2026-04-17
+    assert result["normalized_tasks"][0]["deadline"] == "2026-04-17"
+
+
+def test_normalize_tasks_coerces_invalid_week_offset_to_unknown() -> None:
+    """An unexpected string from the LLM is coerced to 'unknown' rather than
+    rejecting the whole task (Postel's principle)."""
+    result = normalize_tasks(
+        {
+            "extracted_tasks": [
+                {
+                    "title": "Send slides",
+                    "assignee": "An",
+                    "deadline_v2": {
+                        "type": "relative",
+                        "iso": "2026-04-10",
+                        "start": None,
+                        "end": None,
+                        "text": "thứ Sáu",
+                        "resolved_from": "thứ Sáu",
+                        "confidence": 0.85,
+                        "source": "llm",
+                        "is_ambiguous": False,
+                        "week_offset": "definitely_invalid_value",
+                    },
+                    "confidence": 0.85,
+                }
+            ],
+            "errors": [],
+        }
+    )
+    assert len(result["normalized_tasks"]) == 1
+    assert result["normalized_tasks"][0]["deadline_v2"]["week_offset"] == "unknown"

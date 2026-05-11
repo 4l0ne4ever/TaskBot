@@ -152,3 +152,73 @@ def test_weekday_gate_preserves_correct_iso():
     d = {"text": "trước thứ Sáu", "iso": "2026-04-03", "type": "exact"}
     out = enrich_deadline_v2_with_symbolic_iso(d, anchor)
     assert out["iso"] == "2026-04-03"
+
+
+# ---------------------------------------------------------------------------
+# week_offset: "next" and "after_next" override (D.2 — Q-01 roadmap)
+# ---------------------------------------------------------------------------
+
+def test_week_offset_next_overrides_this_friday():
+    """'thứ Sáu tới' (next Friday) from anchor Thu 2026-04-02.
+
+    Without week_offset the gate keeps the nearest Friday (2026-04-03).
+    With week_offset='next' the arithmetic must produce the following week
+    (2026-04-10 = 2026-04-03 + 7).
+
+    This covers the dominant error class in the full 250-sample eval where
+    'thứ Sáu tới' was predicted as 2026-04-03 instead of 2026-04-10.
+    """
+    anchor = date(2026, 4, 2)  # Thursday
+    d = {"text": "trước thứ Sáu tới", "iso": "2026-04-03", "type": "exact", "week_offset": "next"}
+    out = enrich_deadline_v2_with_symbolic_iso(d, anchor)
+    assert out["iso"] == "2026-04-10"
+
+
+def test_week_offset_next_english():
+    """'next Friday' from anchor Wed 2026-04-08 → 2026-04-17."""
+    anchor = date(2026, 4, 8)  # Wednesday
+    d = {"text": "by next Friday", "iso": "2026-04-10", "type": "relative", "week_offset": "next"}
+    out = enrich_deadline_v2_with_symbolic_iso(d, anchor)
+    assert out["iso"] == "2026-04-17"
+
+
+def test_week_offset_after_next():
+    """'after_next Friday' from anchor Thu 2026-04-02 → 2026-04-17 (nearest + 14)."""
+    anchor = date(2026, 4, 2)  # Thursday; nearest Friday = 2026-04-03
+    d = {"text": "thứ Sáu sau nữa", "iso": None, "type": "relative", "week_offset": "after_next"}
+    out = enrich_deadline_v2_with_symbolic_iso(d, anchor)
+    assert out["iso"] == "2026-04-17"
+
+
+def test_week_offset_this_uses_existing_gate():
+    """week_offset='this' still applies the weekday consistency gate for arithmetic errors."""
+    anchor = date(2026, 4, 2)  # Thursday
+    # LLM gave Saturday (+1 day error), week_offset='this' → gate corrects to Friday
+    d = {"text": "thứ Sáu này", "iso": "2026-04-04", "type": "exact", "week_offset": "this"}
+    out = enrich_deadline_v2_with_symbolic_iso(d, anchor)
+    assert out["iso"] == "2026-04-03"
+
+
+def test_week_offset_unknown_does_not_change_correct_iso():
+    """week_offset='unknown' leaves a correct iso alone (no offset applied)."""
+    anchor = date(2026, 4, 2)  # Thursday
+    d = {"text": "thứ Sáu", "iso": "2026-04-03", "type": "exact", "week_offset": "unknown"}
+    out = enrich_deadline_v2_with_symbolic_iso(d, anchor)
+    assert out["iso"] == "2026-04-03"
+
+
+def test_week_offset_next_with_missing_iso():
+    """LLM left iso=null (as instructed for weekday phrases); week_offset='next' fills it."""
+    anchor = date(2026, 4, 2)  # Thursday; nearest Friday = 2026-04-03
+    d = {"text": "thứ Sáu tới", "iso": None, "type": "relative", "week_offset": "next"}
+    out = enrich_deadline_v2_with_symbolic_iso(d, anchor)
+    assert out["iso"] == "2026-04-10"
+
+
+def test_week_offset_none_preserves_original_gate_behavior():
+    """No week_offset → existing weekday gate behavior unchanged (backward compat)."""
+    anchor = date(2026, 4, 2)  # Thursday
+    # LLM gave Saturday (+1 day error), no week_offset → gate corrects to Friday
+    d = {"text": "thứ Sáu", "iso": "2026-04-04", "type": "exact"}
+    out = enrich_deadline_v2_with_symbolic_iso(d, anchor)
+    assert out["iso"] == "2026-04-03"

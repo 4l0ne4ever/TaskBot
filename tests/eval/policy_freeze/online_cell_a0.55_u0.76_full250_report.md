@@ -1,6 +1,6 @@
 # Evaluation Report: pipeline
 
-Generated: 2026-05-10T12:09:42
+Generated: 2026-05-10T12:19:14
 Dataset: 250 samples, 17 categories
 Errors (runtime): 0
 

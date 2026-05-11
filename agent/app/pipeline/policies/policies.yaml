@@ -3,7 +3,7 @@
 
 v1:
   version: policy_v1
-  confidence_abstain_threshold: 0.65
+  confidence_abstain_threshold: 0.55
   confidence_uncertain_threshold: 0.76
   conflict_title_similarity_threshold: 0.7
   max_conflict_checks_per_task: 5

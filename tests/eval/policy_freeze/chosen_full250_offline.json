@@ -1,0 +1,33 @@
+{
+  "status": "complete",
+  "sweep_mode": "offline",
+  "created_at_utc": "2026-05-11T00:03:39Z",
+  "frozen_at_utc": "2026-05-11T00:30:00Z",
+  "source_eval_result": "tests/eval/policy_freeze/online_cell_a0.55_u0.76_full250.json",
+  "pipeline_policy_version": "v1",
+  "commit_sha": "b21a55270519c0b3050ac0f5d6fb292644a8a801",
+  "freeze_note": "Offline sweep showed all cells in abstain=[0.45,0.65] x uncertain=[0.70,0.85] identical (title_f1=0.9835, false_answer=0.0). Thresholds locked to 0.55/0.76 — the values validated directly in the online 250-sample eval — rather than the sweep picker default (0.45/0.70) which was an artifact of the picker choosing the most permissive tied cell, not a superior operating point.",
+  "chosen": {
+    "confidence_abstain_threshold": 0.55,
+    "confidence_uncertain_threshold": 0.76,
+    "metrics_snapshot": {
+      "abstain": 0.55,
+      "uncertain": 0.76,
+      "title_f1": 0.9835,
+      "deadline_exact": 0.8595,
+      "fully_correct_pct": 79.6,
+      "correct_abstain_empty_gt": 1.0,
+      "false_answer_empty_gt": 0.0,
+      "ece": 0.1082,
+      "samples_completed": 250,
+      "samples_excluded_runtime": 0,
+      "runtime_error_count": 0,
+      "aborted_early": false,
+      "abort_reason": "",
+      "contaminated": false,
+      "contaminated_reason": "",
+      "sweep_mode": "offline"
+    }
+  },
+  "csv_path": "tests/eval/policy_freeze/sweep_full250_offline.csv"
+}
