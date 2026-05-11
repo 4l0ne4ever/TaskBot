@@ -147,6 +147,22 @@ async def sync_clear(
     return {"status": "cleared"}
 
 
+@router.delete("/history")
+async def delete_pipeline_history(
+    status: str | None = Query(None, pattern=r"^(completed|failed|partial)$"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, int]:
+    from sqlalchemy import delete as _delete
+
+    stmt = _delete(PipelineRun).where(PipelineRun.user_id == current_user.id)
+    if status:
+        stmt = stmt.where(PipelineRun.status == status)
+    result = await db.execute(stmt)
+    await db.commit()
+    return {"deleted": result.rowcount}
+
+
 @router.get("/history", response_model=list[PipelineRunResponse])
 async def sync_history(
     limit: int = Query(20, ge=1, le=100),

@@ -227,7 +227,6 @@ def _env_artifact_path() -> str | None:
         return str(cfg_val).strip()
     return None
 
-
 def get_runtime_calibrator() -> Calibrator | None:
     """Return the active calibrator, or ``None`` when disabled.
 
@@ -238,6 +237,7 @@ def get_runtime_calibrator() -> Calibrator | None:
     """
     path = _env_artifact_path()
     if not path:
+        
         return None
     return _cached_calibrator(path)
 

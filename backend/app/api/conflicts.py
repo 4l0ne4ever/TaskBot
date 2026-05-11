@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import select, update as _update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -27,6 +27,21 @@ async def list_conflicts(
     stmt = stmt.order_by(Conflict.created_at.desc()).offset(offset).limit(limit)
     result = await db.execute(stmt)
     return list(result.scalars().all())
+
+
+@router.post("/dismiss-all")
+async def dismiss_all_conflicts(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, int]:
+    stmt = (
+        _update(Conflict)
+        .where(Conflict.user_id == current_user.id, Conflict.resolved == False)  # noqa: E712
+        .values(resolved=True, description="[resolved:dismiss_all]")
+    )
+    result = await db.execute(stmt)
+    await db.commit()
+    return {"dismissed": result.rowcount}
 
 
 @router.patch("/{conflict_id}", response_model=ConflictResponse)

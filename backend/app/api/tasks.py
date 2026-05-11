@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import delete as _delete, select, update as _update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -118,6 +118,20 @@ async def update_task(
 
     enriched = await _enrich_tasks(db, [task])
     return enriched[0]
+
+
+@router.delete("")
+async def delete_tasks_bulk(
+    status: str | None = Query(None, pattern=r"^(pending|confirmed|dismissed)$"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, int]:
+    stmt = _delete(Task).where(Task.user_id == current_user.id)
+    if status:
+        stmt = stmt.where(Task.status == status)
+    result = await db.execute(stmt)
+    await db.commit()
+    return {"deleted": result.rowcount}
 
 
 @router.delete("/{task_id}")

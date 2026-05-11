@@ -274,23 +274,45 @@ async def _llm_pressure_snapshot() -> tuple[bool, float, int, bool]:
     minute-scale requeue is pointless — callers should defer the job to the
     day boundary (or fail the sync cleanly) instead of churning in a retry
     loop that burns Redis cycles and never recovers.
+
+    Entries older than the current UTC day are excluded: TPD/RPD quotas reset
+    at UTC midnight, so yesterday's errors must not block today's syncs even
+    when those entries happen to be at the head of the Redis list.
     """
 
     r = await _get_redis()
     window = max(settings.llm_pressure_window_size, 1)
-    rows = await r.lrange("obs:llm:calls", 0, window - 1)
+    # Read a larger buffer so date-filtering doesn't silently under-sample
+    # when today has fewer than ``window`` entries yet.
+    rows = await r.lrange("obs:llm:calls", 0, window * 4 - 1)
     if not rows:
         return False, 0.0, 0, False
+
+    utc_today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+
     rate_limit_errors = 0
     daily_errors = 0
     valid = 0
     for row in rows:
+        if valid >= window:
+            break
         try:
             payload = json.loads(row)
         except json.JSONDecodeError:
             continue
         if not isinstance(payload, dict):
             continue
+        # Skip entries from a previous UTC day — TPD/RPD already reset.
+        ts_raw = payload.get("ts") or ""
+        if ts_raw:
+            try:
+                entry_ts = datetime.fromisoformat(str(ts_raw))
+                if entry_ts.tzinfo is None:
+                    entry_ts = entry_ts.replace(tzinfo=UTC)
+                if entry_ts < utc_today:
+                    continue
+            except (ValueError, TypeError):
+                pass  # unparseable ts → include conservatively
         valid += 1
         error = str(payload.get("error") or "").lower()
         if "429" in error or "rate limit" in error or "rate_limit" in error:

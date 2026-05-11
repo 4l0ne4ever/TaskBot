@@ -3,8 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { api } from "@/lib/api";
+import { Pagination } from "@/components/ui/Pagination";
 import type { PipelineRunRow, SyncStateRow } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+const RUNS_PAGE_SIZE = 20;
 
 interface Progress {
   active: boolean;
@@ -100,27 +103,36 @@ function ProgressBar({ source, running }: { source: "gmail" | "drive"; running: 
 export default function SyncPage() {
   const [status, setStatus] = useState<SyncStateRow[]>([]);
   const [history, setHistory] = useState<PipelineRunRow[]>([]);
+  const [runsTotal, setRunsTotal] = useState(0);
+  const [runsPage, setRunsPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState("1d");
+  const [expandedError, setExpandedError] = useState<string | null>(null);
+  const [cleaningRuns, setCleaningRuns] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (p = runsPage) => {
     setLoading(true);
     try {
-      const [s, h] = await Promise.all([api.sync.status(), api.sync.history(30)]);
+      const offset = (p - 1) * RUNS_PAGE_SIZE;
+      const [s, h] = await Promise.all([
+        api.sync.status(),
+        api.sync.history(RUNS_PAGE_SIZE, offset),
+      ]);
       setStatus(s);
       setHistory(h);
+      setRunsTotal(offset + h.length + (h.length === RUNS_PAGE_SIZE ? RUNS_PAGE_SIZE : 0));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [runsPage]);
 
   useEffect(() => {
-    void load();
-    const t = setInterval(() => void load(), 10_000);
+    void load(runsPage);
+    const t = setInterval(() => void load(runsPage), 10_000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, runsPage]);
 
   async function trigger(source: "gmail" | "drive") {
     try {
@@ -129,6 +141,35 @@ export default function SyncPage() {
       void load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Queue failed");
+    }
+  }
+
+  async function cleanFailedRuns() {
+    setCleaningRuns(true);
+    try {
+      const res = await api.sync.deleteHistory("failed");
+      toast.success(`Deleted ${res.deleted} failed run(s)`);
+      setRunsPage(1);
+      void load(1);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Clean failed");
+    } finally {
+      setCleaningRuns(false);
+    }
+  }
+
+  async function cleanAllRuns() {
+    if (!confirm("Delete ALL pipeline run history?")) return;
+    setCleaningRuns(true);
+    try {
+      const res = await api.sync.deleteHistory();
+      toast.success(`Deleted ${res.deleted} run(s)`);
+      setRunsPage(1);
+      void load(1);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Clean failed");
+    } finally {
+      setCleaningRuns(false);
     }
   }
 
@@ -236,7 +277,33 @@ export default function SyncPage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">Pipeline runs</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">Pipeline runs</h2>
+          <div className="ml-auto flex gap-2">
+            <button
+              type="button"
+              onClick={() => void cleanFailedRuns()}
+              disabled={cleaningRuns || history.filter((r) => r.status === "failed").length === 0}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--muted)] hover:bg-[var(--card-hover)] disabled:opacity-40 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Clean Failed
+            </button>
+            <button
+              type="button"
+              onClick={() => void cleanAllRuns()}
+              disabled={cleaningRuns || history.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--danger)]/40 text-[var(--danger)] hover:bg-[var(--danger)]/10 px-3 py-1.5 text-xs disabled:opacity-40 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Clean All
+            </button>
+          </div>
+        </div>
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
           {history.length > 0 ? (
             <table className="w-full text-sm">
@@ -246,22 +313,37 @@ export default function SyncPage() {
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium text-right">Tasks</th>
                   <th className="px-4 py-3 font-medium text-right">Conflicts</th>
-                  {history.some((r) => r.error_message) && <th className="px-4 py-3 font-medium">Error</th>}
+                  <th className="px-4 py-3 font-medium">Error</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border)]">
                 {history.map((r) => (
-                  <tr key={r.id} className="hover:bg-[var(--card-hover)] transition-colors">
-                    <td className="px-4 py-3 text-xs text-[var(--muted)] whitespace-nowrap">
-                      {new Date(r.started_at).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
-                    <td className="px-4 py-3 text-right tabular-nums">{r.tasks_extracted}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{r.conflicts_found}</td>
-                    {history.some((h) => h.error_message) && (
-                      <td className="px-4 py-3 text-xs text-red-400 max-w-xs truncate">{r.error_message ?? ""}</td>
+                  <>
+                    <tr
+                      key={r.id}
+                      className="hover:bg-[var(--card-hover)] transition-colors cursor-default"
+                      onClick={() => r.error_message && setExpandedError(expandedError === r.id ? null : r.id)}
+                    >
+                      <td className="px-4 py-3 text-xs text-[var(--muted)] whitespace-nowrap">
+                        {new Date(r.started_at).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
+                      <td className="px-4 py-3 text-right tabular-nums">{r.tasks_extracted}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{r.conflicts_found}</td>
+                      <td className="px-4 py-3 text-xs text-red-400 max-w-[220px]">
+                        {r.error_message ? (
+                          <span className="truncate block">{r.error_message}</span>
+                        ) : null}
+                      </td>
+                    </tr>
+                    {expandedError === r.id && r.error_message && (
+                      <tr key={`${r.id}-err`} className="bg-red-500/5">
+                        <td colSpan={5} className="px-4 py-3 text-xs text-red-400 break-all whitespace-pre-wrap font-mono">
+                          {r.error_message}
+                        </td>
+                      </tr>
                     )}
-                  </tr>
+                  </>
                 ))}
               </tbody>
             </table>
@@ -271,6 +353,12 @@ export default function SyncPage() {
             </div>
           )}
         </div>
+        <Pagination
+          page={runsPage}
+          pageSize={RUNS_PAGE_SIZE}
+          total={runsTotal}
+          onPage={(p) => { setRunsPage(p); void load(p); }}
+        />
       </section>
     </div>
   );

@@ -83,24 +83,36 @@ export const api = {
     ) =>
       apiFetch<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     delete: (id: string) => apiFetch<{ deleted: string; calendar_event_id: string }>(`/tasks/${id}`, { method: "DELETE" }),
+    deleteAll: (status?: string) => {
+      const q = status ? `?status=${status}` : "";
+      return apiFetch<{ deleted: number }>(`/tasks${q}`, { method: "DELETE" });
+    },
   },
   conflicts: {
-    list: (resolved?: boolean) => {
-      const q = resolved === undefined ? "" : `?resolved=${resolved}`;
-      return apiFetch<Conflict[]>(`/tasks/conflicts${q}`);
+    list: (resolved?: boolean, limit = 50, offset = 0) => {
+      const q = new URLSearchParams();
+      if (resolved !== undefined) q.set("resolved", String(resolved));
+      q.set("limit", String(limit));
+      q.set("offset", String(offset));
+      return apiFetch<Conflict[]>(`/tasks/conflicts?${q.toString()}`);
     },
     resolve: (id: string, resolution: "accept_a" | "accept_b" | "dismiss") =>
       apiFetch<Conflict>(`/tasks/conflicts/${id}`, {
         method: "PATCH",
         body: JSON.stringify({ resolution }),
       }),
+    dismissAll: () => apiFetch<{ dismissed: number }>("/tasks/conflicts/dismiss-all", { method: "POST" }),
   },
   sync: {
     status: () => apiFetch<SyncStateRow[]>("/sync/status"),
     trigger: (source: "gmail" | "drive", timeRange: string = "1d") =>
       apiFetch<{ status: string; source: string }>(`/sync/trigger?source=${source}&time_range=${timeRange}`, { method: "POST" }),
     clear: () => apiFetch<{ status: string }>("/sync/clear", { method: "POST" }),
-    history: (limit = 20) => apiFetch<PipelineRunRow[]>(`/sync/history?limit=${limit}`),
+    history: (limit = 20, offset = 0) => apiFetch<PipelineRunRow[]>(`/sync/history?limit=${limit}&offset=${offset}`),
+    deleteHistory: (status?: string) => {
+      const q = status ? `?status=${status}` : "";
+      return apiFetch<{ deleted: number }>(`/sync/history${q}`, { method: "DELETE" });
+    },
     progress: (source: "gmail" | "drive") =>
       apiFetch<{ active: boolean; step: string; detail: string; current: number; total: number }>(`/sync/progress?source=${source}`),
   },
