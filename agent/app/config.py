@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     groq_api_key: str
     groq_model: str = "openai/gpt-oss-120b"
     groq_fallback_model: str = "llama-3.3-70b-versatile"
+    cerebras_api_key: str | None = None
+    cerebras_model: str = "gpt-oss-120b"
+    cerebras_base_url: str = "https://api.cerebras.ai/v1"
     gemini_api_key: str | None = Field(
         default=None,
         validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY"),

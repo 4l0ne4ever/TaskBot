@@ -290,6 +290,88 @@ def test_normalize_tasks_passes_week_offset_through_coercion() -> None:
     assert result["normalized_tasks"][0]["deadline"] == "2026-04-17"
 
 
+def test_normalize_tasks_passes_phrase_class_and_params_through_coercion() -> None:
+    """phrase_class and phrase_params must survive _coerce_deadline_v2 and
+    reach the V2 resolver so it can compute the correct date.
+
+    Root cause of 2026-05-13 regression: _coerce_deadline_v2 was written
+    before V2 neuro-symbolic fields were introduced.  It silently dropped them,
+    so enrich_deadline_v2_with_symbolic_iso never entered the V2 path even
+    when the LLM output phrase_class/phrase_params correctly.
+    """
+    result = normalize_tasks(
+        {
+            "extracted_tasks": [
+                {
+                    "title": "hoàn thành bản đánh giá nhân sự",
+                    "assignee": "Nguyễn",
+                    "deadline_v2": {
+                        "type": "relative",
+                        "iso": None,
+                        "start": None,
+                        "end": None,
+                        "text": "thứ Sáu tới",
+                        "resolved_from": "thứ Sáu tới",
+                        "confidence": 0.88,
+                        "source": "llm",
+                        "is_ambiguous": False,
+                        "week_offset": None,
+                        "phrase_class": "named_weekday",
+                        "phrase_params": {"weekday": "friday", "offset": "next"},
+                    },
+                    "confidence": 0.88,
+                }
+            ],
+            "errors": [],
+            "metadata": {"sent_at": "2026-04-02"},  # Thursday
+        }
+    )
+    assert len(result["normalized_tasks"]) == 1
+    task = result["normalized_tasks"][0]
+    dv2 = task["deadline_v2"]
+    assert dv2["phrase_class"] == "named_weekday"
+    assert dv2["phrase_params"] == {"weekday": "friday", "offset": "next"}
+    # Anchor 2026-04-02 (Thu); this Friday = 2026-04-03; +7 (next) = 2026-04-10
+    assert task["deadline"] == "2026-04-10"
+
+
+def test_normalize_tasks_v2_fallback_to_v1_when_phrase_params_invalid() -> None:
+    """When phrase_class is present but phrase_params is missing, the resolver
+    must fall through to V1 text-pattern rescue instead of returning iso=None.
+
+    This handles partial LLM output where phrase_class was set but the
+    phrase_params object is absent or structurally wrong.
+    """
+    result = normalize_tasks(
+        {
+            "extracted_tasks": [
+                {
+                    "title": "Finish report",
+                    "assignee": "Lan",
+                    "deadline_v2": {
+                        "type": "relative",
+                        "iso": None,
+                        "text": "tomorrow",
+                        "resolved_from": "tomorrow",
+                        "confidence": 0.88,
+                        "source": "llm",
+                        "is_ambiguous": False,
+                        "phrase_class": "named_weekday",  # wrong class for "tomorrow"
+                        "phrase_params": None,             # params missing
+                    },
+                    "confidence": 0.88,
+                }
+            ],
+            "errors": [],
+            "metadata": {"sent_at": "2026-04-02"},
+        }
+    )
+    assert len(result["normalized_tasks"]) == 1
+    task = result["normalized_tasks"][0]
+    # V2 fails (named_weekday + no params), V1 rescues via "tomorrow" in text
+    assert task["deadline"] == "2026-04-03"
+
+
 def test_normalize_tasks_coerces_invalid_week_offset_to_unknown() -> None:
     """An unexpected string from the LLM is coerced to 'unknown' rather than
     rejecting the whole task (Postel's principle)."""

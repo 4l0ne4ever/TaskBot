@@ -20,10 +20,10 @@ Checkpoint / resume:
   (do not combine with sweep ``--resume``).
 
 Usage:
-  PIPELINE_POLICY_VERSION=v2 python tests/eval/sweep_policy_thresholds.py \\
-    --output tests/eval/policy_freeze/sweep_v2.csv \\
-    --checkpoint tests/eval/policy_freeze/sweep_v2_checkpoint.json \\
-    --write-freeze tests/eval/policy_freeze/chosen_v2.json --limit 40
+  PIPELINE_POLICY_VERSION=v1 python tests/eval/sweep_policy_thresholds.py \\
+    --output tests/eval/policy_freeze/sweep_v1.csv \\
+    --checkpoint tests/eval/policy_freeze/sweep_v1_checkpoint.json \\
+    --write-freeze tests/eval/policy_freeze/chosen_v1.json --limit 40
 
   # After pause / 429:
   ... same command ... --resume

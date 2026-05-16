@@ -1,5 +1,28 @@
-# Single source for pipeline policy presets. PIPELINE_POLICY_VERSION selects v1 | v2 | v3.
-# Optional: PIPELINE_POLICY_CONFIDENCE_ABSTAIN_OVERRIDE / UNCERTAIN_OVERRIDE (see policy.py).
+# Single unified pipeline policy. Thresholds (0.55 / 0.76) are the calibrated
+# values used across production and eval.
+#
+# verification_enabled is OFF. The verify pass was introduced to correct LLM
+# deadline misclassifications (Case G / Case C), but the
+# cerebras_verify_compare/ sweep on the full 250-sample eval (2026-05-15) shows
+# it is net-negative on every metric:
+#   verify ON  → Title F1 0.946, Deadline Exact 0.802, Fully Correct 80.8%,
+#                false_abstain 0.100, complete_miss 21, missed_task 21,
+#                wrong_deadline 35
+#   verify OFF → Title F1 0.968, Deadline Exact 0.847, Fully Correct 84.4%,
+#                false_abstain 0.048, complete_miss 10, missed_task 10,
+#                wrong_deadline 25
+# The verify prompt has two responsibilities — (1) filter non-tasks and
+# (2) re-check deadline phrase_class. Step (1) duplicates filtering the
+# extraction prompt already performs and over-removes legitimate tasks in
+# Vietnamese polite emails, conflict_assignee threads, structured docs, and
+# forwarded emails (see cerebras_verify_compare/online_cell_verify1_*.md).
+# Step (2) does not measurably reduce wrong_deadline because the same model
+# re-emits the same offset mislabel. Until a redesigned verifier addresses
+# only (2) with measurable benefit, keep verify off; re-enable per-run with
+# EVAL_VERIFY_LLM=1 when comparing.
+#
+# Optional threshold overrides: PIPELINE_POLICY_CONFIDENCE_ABSTAIN_OVERRIDE /
+# UNCERTAIN_OVERRIDE (see policy.py).
 
 v1:
   version: policy_v1
@@ -14,34 +37,5 @@ v1:
     Do not infer obligations from completed work, generic status, or invitations without a clear assignee and deliverable.
     Use lower confidence when any part of the extraction is inferred rather than explicitly stated.
     Preserve one task per independent item in numbered lists, bullet lists, and open checklist rows.
-    If a later section revises the assignee or deadline for the same deliverable, emit the earlier and later assignments in source order so validation can record the conflict and keep the later active task.
+    If a later section revises the assignee or deadline for the same deliverable, emit a single task reflecting the final resolved state — use the most recent assignee and deadline, and carry forward any field that the later section did not explicitly change.
     When a request delegates work to another named person, use the named performer of the deliverable as assignee, not the surrounding audience or messenger.
-
-v2:
-  version: policy_v2
-  confidence_abstain_threshold: 0.65
-  confidence_uncertain_threshold: 0.82
-  conflict_title_similarity_threshold: 0.7
-  max_conflict_checks_per_task: 5
-  verification_enabled: true
-  validate_evidence_in_source: true
-  extraction_guidance: |
-    Prefer returning an empty task list when the message is only informational, social, or thanks-only.
-    Do not infer obligations from completed work, generic status, or invitations without a clear assignee and deliverable.
-    Use lower confidence when any part of the extraction is inferred rather than explicitly stated.
-
-v3:
-  version: policy_v3
-  confidence_abstain_threshold: 0.5
-  confidence_uncertain_threshold: 0.75
-  conflict_title_similarity_threshold: 0.7
-  max_conflict_checks_per_task: 5
-  verification_enabled: true
-  validate_evidence_in_source: true
-  extraction_guidance: |
-    Return {"tasks": []} when the message is purely informational, thanks-only,
-    past-tense completion, optional invitation, or contains no explicit future
-    work assignment directed at a specific person.
-    Use lower confidence (0.4–0.6) when obligations are inferred rather than
-    explicitly stated. If confidence would be below 0.4 for a candidate task,
-    omit that task (prefer empty tasks over guessing).

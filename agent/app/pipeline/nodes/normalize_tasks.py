@@ -15,6 +15,8 @@ CANONICAL_DEADLINE_KEYS = (
     "source",
     "is_ambiguous",
     "week_offset",
+    "phrase_class",
+    "phrase_params",
 )
 _VALID_DEADLINE_TYPES = ("exact", "range", "relative", "none")
 _VALID_WEEK_OFFSETS = ("this", "next", "after_next", "unknown")
@@ -115,6 +117,17 @@ def _coerce_deadline_v2(d: object) -> dict | None:
     else:
         # Unknown string from LLM — treat as ambiguous rather than rejecting
         out["week_offset"] = "unknown"
+
+    # V2 neuro-symbolic metadata — pass through verbatim so temporal_resolve
+    # can run the phrase-class handlers.  These keys did not exist when this
+    # function was first written; previously they were silently dropped, which
+    # caused the V2 resolver path to never execute even when the LLM output
+    # them correctly.
+    phrase_class = d.get("phrase_class")
+    out["phrase_class"] = phrase_class if isinstance(phrase_class, str) else None
+
+    phrase_params = d.get("phrase_params")
+    out["phrase_params"] = phrase_params if isinstance(phrase_params, dict) else None
 
     return out
 

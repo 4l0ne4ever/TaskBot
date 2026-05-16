@@ -294,7 +294,26 @@ def test_extraction_prompt_covers_lists_threads_and_delegated_performers(monkeyp
     assert "numbered lists" in user_prompt
     assert "open checklist rows" in user_prompt
     assert "named performer is the assignee" in user_prompt
-    assert "changes the assignee or deadline" in user_prompt
+    assert "final resolved state" in user_prompt
+
+
+def test_verify_prompt_instructs_to_check_phrase_class_against_text() -> None:
+    """The verify pass (when enabled) must re-check deadline_v2.phrase_class
+    against the original text so that LLM misclassifications like
+    text="tomorrow" → phrase_class="today" can be corrected at production
+    quality. This is the only general-purpose lever available for catching
+    these misclassifications without adding language-specific patterns to
+    Python code — the LLM understands all source languages, the prompt just
+    tells it where to focus.
+    """
+    from app.pipeline.prompts import EXTRACTION_VERIFY_USER_V1
+
+    prompt = EXTRACTION_VERIFY_USER_V1.lower()
+    assert "phrase_class" in prompt
+    assert "phrase_params" in prompt
+    # Confirms the prompt directs the verifier to compare phrase_class with
+    # the text semantics — the core anti-Case-G mechanism.
+    assert "tomorrow" in prompt and "today" in prompt
 
 
 class _StubPolicy:

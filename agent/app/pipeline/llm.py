@@ -4,17 +4,23 @@ Design
 ------
 Resilient production order (keys permitting):
 
-1. **Groq primary** (``groq_model``, default ``openai/gpt-oss-120b``) — TPM jitter
+1. **Cerebras** (``cerebras_model``, default ``gpt-oss-120b``) — eval-only path,
+   activated by ``EVAL_CEREBRAS_ONLY=1``. Same model as Groq primary but served
+   by Cerebras WSE (~3000 tok/s). No fallback; rate-limit errors propagate.
+
+2. **Groq primary** (``groq_model``, default ``openai/gpt-oss-120b``) — TPM jitter
    retry + ``PrimaryCircuit`` on this tier only.
 
-2. **Groq fallback** (``groq_fallback_model``, default Llama 3.3 70B) — when the
+3. **Groq fallback** (``groq_fallback_model``, default Llama 3.3 70B) — when the
    primary is rate-limited (incl. circuit-open short-circuit to this model) or
    after TPM retry exhaustion.
 
-3. **Gemini** (``gemini_model``) — last resort when both Groq tiers fail with
+4. **Gemini** (``gemini_model``) — last resort when both Groq tiers fail with
    saturation-class errors and ``GEMINI_API_KEY`` is set.
 
-Evaluation: ``EVAL_GEMINI_ONLY=1`` with a Gemini key pins **Gemini only**.
+Evaluation overrides (mutually exclusive, Cerebras takes precedence):
+- ``EVAL_CEREBRAS_ONLY=1`` — all calls go to Cerebras; Groq/Gemini skipped.
+- ``EVAL_GEMINI_ONLY=1`` — all calls go to Gemini; Groq skipped.
 Otherwise ``GROQ_STRICT_PRIMARY=1`` forces **Groq primary only** (no 70b
 substitution) for the Groq path; production-style Groq→fallback→Gemini still
 applies when strict is off.
@@ -46,6 +52,32 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 _client = Groq(api_key=settings.groq_api_key, max_retries=0)
+
+_cerebras_lock = threading.Lock()
+_cerebras_client_cached: Any | None = None
+
+
+def _cerebras_configured() -> bool:
+    key = settings.cerebras_api_key
+    return bool(key and str(key).strip())
+
+
+def _cerebras_only() -> bool:
+    return (os.getenv("EVAL_CEREBRAS_ONLY") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _get_cerebras_client() -> Any:
+    global _cerebras_client_cached
+    with _cerebras_lock:
+        if _cerebras_client_cached is not None:
+            return _cerebras_client_cached
+        from openai import OpenAI
+
+        _cerebras_client_cached = OpenAI(
+            api_key=settings.cerebras_api_key,
+            base_url=settings.cerebras_base_url,
+        )
+        return _cerebras_client_cached
 
 
 def _gemini_fallback_allowed() -> bool:
@@ -421,6 +453,7 @@ def _create(
     tier: str,
     system_prompt: str = "Return JSON only.",
     max_tokens: int | None = None,
+    _client_override: Any = None,
 ) -> str:
     started = time.perf_counter()
     kwargs: dict[str, object] = {
@@ -434,7 +467,8 @@ def _create(
     }
     if isinstance(max_tokens, int) and max_tokens > 0:
         kwargs["max_tokens"] = max_tokens
-    response = _client.chat.completions.create(
+    c = _client_override if _client_override is not None else _client
+    response = c.chat.completions.create(
         **kwargs,
     )
     latency_ms = (time.perf_counter() - started) * 1000
@@ -614,6 +648,35 @@ def call_llm(
     gem = _gemini_configured()
     mid = settings.gemini_model
     gemini_only = (os.getenv("EVAL_GEMINI_ONLY") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+    if _cerebras_configured() and _cerebras_only():
+        cerebras_model = settings.cerebras_model
+        try:
+            out = _create(
+                cerebras_model,
+                prompt,
+                temperature,
+                tier="cerebras",
+                system_prompt=system_prompt,
+                max_tokens=max_tokens,
+                _client_override=_get_cerebras_client(),
+            )
+        except Exception as exc:
+            if _is_rate_limit(exc):
+                record_llm_call(
+                    model=cerebras_model,
+                    model_tier="cerebras",
+                    latency_ms=0,
+                    error=str(exc)[:300],
+                    rate_limit_kind=_classify_rate_limit(str(exc)),
+                    call_context=_call_context.get(),
+                )
+                _record_provenance(
+                    CallRecord(model=cerebras_model, is_fallback=False, rate_limited=True, error=str(exc)[:200])
+                )
+            raise
+        _record_provenance(CallRecord(model=cerebras_model, is_fallback=False, rate_limited=False))
+        return out
 
     if gem and strict and gemini_only:
         try:
