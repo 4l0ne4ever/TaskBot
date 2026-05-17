@@ -7,12 +7,10 @@ def test_get_pipeline_policy_has_ordered_thresholds() -> None:
     assert 0.0 < p.confidence_abstain_threshold < p.confidence_uncertain_threshold <= 1.0
     assert p.max_conflict_checks_per_task >= 1
     assert isinstance(p.extraction_guidance, str)
-    assert isinstance(p.verification_enabled, bool)
     assert isinstance(p.validate_evidence_in_source, bool)
 
 
 def test_get_pipeline_policy_supports_eval_cost_overrides(monkeypatch) -> None:
-    monkeypatch.setenv("EVAL_VERIFY_LLM", "0")
     monkeypatch.setenv("EVAL_ENABLE_CONFLICT_CHECK", "0")
     monkeypatch.setenv("PIPELINE_POLICY_VERSION", "v1")
 
@@ -21,10 +19,8 @@ def test_get_pipeline_policy_supports_eval_cost_overrides(monkeypatch) -> None:
     policy_mod._load_pipeline_policy.cache_clear()
     p = get_pipeline_policy()
 
-    # Both eval overrides force the values regardless of the YAML defaults,
-    # so eval runs can opt out of verification and conflict checks to keep
-    # quota/latency low.
-    assert p.verification_enabled is False
+    # The eval override forces conflict checks off regardless of the YAML
+    # default, so eval runs can keep quota/latency low.
     assert p.max_conflict_checks_per_task == 0
     policy_mod._load_pipeline_policy.cache_clear()
 

@@ -1,11 +1,13 @@
-EVAL_RUN_ID=20260515T150632Z-b075ce0c
-LANGSMITH_SESSION_NAME=eval-pipeline-20260515T150632Z-b075ce0c (filter runs in LangSmith)
+===== 2026-05-16T11:42:30Z START post-fix full250 =====
+EVAL_RUN_ID=20260516T114230Z-17676555
+LANGSMITH_SESSION_NAME=eval-pipeline-20260516T114230Z-17676555 (filter runs in LangSmith)
   [1/250] processing mx-189 (edge_mixed_lang)...
 observability: Redis at redis://127.0.0.1:56379 unreachable (ConnectionError). Host-side tools must use the published host port: set REDIS_PUBLISH_PORT (or REDIS_URL) to match Docker/OrbStack left-hand port (e.g. 56379:6379 → 56379). Telemetry retries skipped until restart.
   [10/250] processing eval-070 (email_no_task)...
   [20/250] processing eval-031 (email_multi_task)...
   ... batch cooldown 45.0s after 20/250 samples (rate-limit hygiene)
   [30/250] processing fw-205 (edge_forwarded)...
+    pipeline rate-limited, waiting 20s (raw=20s, attempt 1)...
   [40/250] processing eval-025 (email_simple)...
   ... batch cooldown 45.0s after 40/250 samples (rate-limit hygiene)
   [50/250] processing nn-248 (edge_nickname)...
@@ -33,31 +35,31 @@ observability: Redis at redis://127.0.0.1:56379 unreachable (ConnectionError). H
   [200/250] processing sf-237 (edge_special_format)...
   ... batch cooldown 45.0s after 200/250 samples (rate-limit hygiene)
   [210/250] processing eval-093 (email_ambiguous)...
-    pipeline rate-limited, waiting 20s (raw=20s, attempt 1)...
   [220/250] processing eval-075 (email_no_task)...
   ... batch cooldown 45.0s after 220/250 samples (rate-limit hygiene)
   [230/250] processing eval-020 (email_simple)...
   [240/250] processing fw-207 (edge_forwarded)...
   ... batch cooldown 45.0s after 240/250 samples (rate-limit hygiene)
   [250/250] processing eval-045 (email_multi_task)...
-Method: pipeline  Model: openai/gpt-oss-120b  {'fallback_calls': 0, 'primary_calls_total': 663, 'fallback_calls_per_sample_total': 0, 'rate_limited_calls_total': 2, 'samples_using_fallback': 0, 'samples_total_with_provenance': 250, 'contaminated': False, 'model_mix': {'gpt-oss-120b': 663}, 'strict_primary_mode': False}
-Samples: 250  Runtime errors: 0
-Title F1:       0.9459  (P=0.9959 R=0.9007)
-Assignee F1:    0.9478
-Deadline Exact: 0.8017
-Deadline Near:  0.8182
-Conflict F1:    0.7805
-Abstention: correct_abstain(empty GT)=0.975 false_answer(empty GT)=0.025 false_abstain(nonempty GT)=0.1
-Calibration ECE: 0.1008  (confidence pairs: 245)
-Fully correct:  202/250 (80.8%)
+Method: pipeline  Model: openai/gpt-oss-120b  {'fallback_calls': 0, 'primary_calls_total': 453, 'fallback_calls_per_sample_total': 0, 'rate_limited_calls_total': 1, 'samples_using_fallback': 0, 'samples_total_with_provenance': 248, 'contaminated': False, 'model_mix': {'gpt-oss-120b': 453}, 'strict_primary_mode': False}
+Samples: 250  Runtime errors: 2
+Title F1:       0.9580  (P=0.9960 R=0.9228)
+Assignee F1:    0.9583
+Deadline Exact: 0.8099
+Deadline Near:  0.8306
+Conflict F1:    0.7500
+Abstention: correct_abstain(empty GT)=1.0 false_answer(empty GT)=0.0 false_abstain(nonempty GT)=0.0619
+Calibration ECE: 0.1008  (confidence pairs: 251)
+Fully correct:  207/250 (82.8%)
 
 Top error types:
-  wrong_deadline: 35
-  missed_task: 21
-  complete_miss: 21
-  missed_assignee: 20
-  missed_conflict: 9
+  wrong_deadline: 29
+  missed_task: 14
+  missed_assignee: 14
+  complete_miss: 13
+  missed_conflict: 10
 
-JSON:   tests/eval/policy_freeze/cerebras_verify_compare/online_cell_verify1_a0.55_u0.76_full250.json
-Report: tests/eval/policy_freeze/cerebras_verify_compare/online_cell_verify1_a0.55_u0.76_full250_report.md
+JSON:   tests/eval/policy_freeze/post_fix_sweep/online_cell_a0.55_u0.76_full250.json
+Report: tests/eval/policy_freeze/post_fix_sweep/online_cell_a0.55_u0.76_full250_report.md
 Redis LLM SLO snapshot (last N calls): {'sample_size': 0, 'error_rate': 0.0, 'p50_ms': 0, 'p95_ms': 0, 'p99_ms': 0, 'cost_total': 0.0, 'langsmith_ingest': {}, 'langsmith_post_fail_rate': 0.0}
+===== 2026-05-16T12:48:57Z DONE post-fix full250 =====

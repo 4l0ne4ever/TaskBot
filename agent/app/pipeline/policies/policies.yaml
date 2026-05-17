@@ -1,25 +1,9 @@
 # Single unified pipeline policy. Thresholds (0.55 / 0.76) are the calibrated
-# values used across production and eval.
-#
-# verification_enabled is OFF. The verify pass was introduced to correct LLM
-# deadline misclassifications (Case G / Case C), but the
-# cerebras_verify_compare/ sweep on the full 250-sample eval (2026-05-15) shows
-# it is net-negative on every metric:
-#   verify ON  → Title F1 0.946, Deadline Exact 0.802, Fully Correct 80.8%,
-#                false_abstain 0.100, complete_miss 21, missed_task 21,
-#                wrong_deadline 35
-#   verify OFF → Title F1 0.968, Deadline Exact 0.847, Fully Correct 84.4%,
-#                false_abstain 0.048, complete_miss 10, missed_task 10,
-#                wrong_deadline 25
-# The verify prompt has two responsibilities — (1) filter non-tasks and
-# (2) re-check deadline phrase_class. Step (1) duplicates filtering the
-# extraction prompt already performs and over-removes legitimate tasks in
-# Vietnamese polite emails, conflict_assignee threads, structured docs, and
-# forwarded emails (see cerebras_verify_compare/online_cell_verify1_*.md).
-# Step (2) does not measurably reduce wrong_deadline because the same model
-# re-emits the same offset mislabel. Until a redesigned verifier addresses
-# only (2) with measurable benefit, keep verify off; re-enable per-run with
-# EVAL_VERIFY_LLM=1 when comparing.
+# values used across production and eval. The historical LLM verify pass was
+# removed after the 2026-05-15 Cerebras compare sweep showed it was net
+# negative on every metric (see git log for the policy/extract_tasks
+# cleanup). Deadline phrase mislabels are now corrected deterministically by
+# the next-week qualifier detector in temporal_resolve.py.
 #
 # Optional threshold overrides: PIPELINE_POLICY_CONFIDENCE_ABSTAIN_OVERRIDE /
 # UNCERTAIN_OVERRIDE (see policy.py).
@@ -30,7 +14,6 @@ v1:
   confidence_uncertain_threshold: 0.76
   conflict_title_similarity_threshold: 0.7
   max_conflict_checks_per_task: 5
-  verification_enabled: false
   validate_evidence_in_source: true
   extraction_guidance: |
     Prefer returning an empty task list when the message is only informational, social, or thanks-only.

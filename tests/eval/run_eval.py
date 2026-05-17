@@ -767,7 +767,6 @@ def main() -> int:
                 "pipeline_policy_version_key": ver,
                 "confidence_abstain_threshold": pol.confidence_abstain_threshold,
                 "confidence_uncertain_threshold": pol.confidence_uncertain_threshold,
-                "verification_enabled": pol.verification_enabled,
                 "max_conflict_checks_per_task": pol.max_conflict_checks_per_task,
                 "policy_version_label": pol.version,
             }
@@ -783,7 +782,6 @@ def main() -> int:
             "uncertain": _unc_ov or None,
         },
         "cost_control_overrides": {
-            "verification_enabled": os.getenv("PIPELINE_POLICY_VERIFICATION_ENABLED_OVERRIDE") or os.getenv("EVAL_VERIFY_LLM"),
             "max_conflict_checks": os.getenv("PIPELINE_POLICY_MAX_CONFLICT_CHECKS_OVERRIDE"),
             "eval_enable_conflict_check": os.getenv("EVAL_ENABLE_CONFLICT_CHECK"),
             "extraction_max_retries": os.getenv("EXTRACTION_MAX_RETRIES"),

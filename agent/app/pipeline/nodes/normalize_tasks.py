@@ -191,7 +191,7 @@ def _sanitize_title(title: str, deadline_v2: dict) -> str:
     return title
 
 
-def _normalize_task(item: dict, anchor: date | None) -> dict | None:
+def _normalize_task(item: dict, anchor: date | None, source_text: str | None = None) -> dict | None:
     title = item.get("title")
     if not isinstance(title, str) or not title.strip():
         return None
@@ -199,7 +199,7 @@ def _normalize_task(item: dict, anchor: date | None) -> dict | None:
     if deadline_v2 is None:
         return None
     if anchor:
-        deadline_v2 = enrich_deadline_v2_with_symbolic_iso(deadline_v2, anchor)
+        deadline_v2 = enrich_deadline_v2_with_symbolic_iso(deadline_v2, anchor, source_text)
     confidence = item.get("confidence")
     if confidence is not None:
         if not isinstance(confidence, (int, float)):
@@ -261,6 +261,7 @@ def normalize_tasks(state: PipelineState) -> dict:
     meta = state.get("metadata") if isinstance(state.get("metadata"), dict) else {}
     sent_at = meta.get("sent_at")
     anchor = parse_anchor_date(str(sent_at)) if sent_at else None
+    cleaned_text = state.get("cleaned_text") if isinstance(state.get("cleaned_text"), str) else None
 
     resolver = get_default_resolver()
     user_id_raw = state.get("user_id")
@@ -271,7 +272,7 @@ def normalize_tasks(state: PipelineState) -> dict:
         if not isinstance(item, dict):
             errors.append(f"normalize_tasks: task[{idx}] is not an object")
             continue
-        task = _normalize_task(item, anchor)
+        task = _normalize_task(item, anchor, source_text=cleaned_text)
         if task is None:
             errors.append(f"normalize_tasks: task[{idx}] rejected by schema guardrail")
             continue

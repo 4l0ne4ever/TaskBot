@@ -325,7 +325,6 @@ def test_validate_tasks_intra_batch_respects_budget(monkeypatch) -> None:
         conflict_title_similarity_threshold=0.5,
         max_conflict_checks_per_task=1,
         extraction_guidance=base_policy.extraction_guidance,
-        verification_enabled=base_policy.verification_enabled,
         validate_evidence_in_source=base_policy.validate_evidence_in_source,
     )
     monkeypatch.setattr(module, "get_pipeline_policy", lambda: capped)

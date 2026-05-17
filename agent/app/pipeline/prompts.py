@@ -112,36 +112,6 @@ Metadata:
 JSON object with a "tasks" array only. No markdown or extra keys outside "tasks".
 """
 
-EXTRACTION_VERIFY_SYSTEM_V1 = """You verify a proposed task list against the original message.
-Return JSON only: one object {"tasks":[...]} with the same task field shape as the input list.
-Remove items that should not be kept. If no items should remain, return {"tasks":[]}.
-"""
-
-EXTRACTION_VERIFY_USER_V1 = """Original message:
-{text}
-
-Metadata:
-- Source: {source_type}
-- Sender: {sender}
-- Date: {sent_at}
-- Subject: {subject}
-
-Proposed tasks (JSON):
-{tasks_json}
-
-Return JSON only: {"tasks":[...]}. You have two responsibilities:
-
-(1) Filter tasks — keep only explicit future work assignments. Remove items that come from completed/past work, thanks-only or FYI-only content, generic discussion without a requested deliverable, or vague suggestions that are not assigned to someone.
-
-(2) Verify deadline_v2 against the original text — for each task you keep, re-read the original message and confirm that:
-   - deadline_v2.text is a verbatim phrase from the message (correct it if not).
-   - deadline_v2.phrase_class accurately describes that phrase. A phrase meaning the next calendar day after the reference date is "tomorrow" (not "today"); a phrase meaning the reference date itself is "today" (not "tomorrow"). For a weekday phrase, if the source language signals a future-week occurrence (e.g. English "next", Vietnamese "tới"/"tuần sau", French "prochain", Spanish "próximo", Japanese "来週", or any equivalent in the source language), phrase_params.offset must be "next" (or "after_next" when two weeks out); a bare weekday with no future-week qualifier is "this".
-   - deadline_v2.phrase_params shape matches phrase_class (weekday+offset for named_weekday, n for n_days, period+offset_periods for start_of_period, etc.).
-   If any deadline_v2 field is inconsistent with the original text, correct it; leave iso=null for classes the pipeline computes (named_weekday, end_of_period, start_of_period, nth_of_month).
-
-When you keep a task, preserve its "evidence_quote" if the quote still appears verbatim in the original message; otherwise set "evidence_quote" to null.
-"""
-
 EXTRACTION_RETRY_HINT_V1 = (
     "Re-check deadlines: for every task set phrase_class, phrase_params, AND text in deadline_v2 — all three are required. "
     "text must be the verbatim deadline phrase from the source (never null when a phrase exists). "

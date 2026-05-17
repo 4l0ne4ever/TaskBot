@@ -85,8 +85,6 @@ class Settings(BaseSettings):
     mcp_auth_revoke_disable_ttl_seconds: int = 24 * 3600
     calibration_artifact_path: str | None = None
     llm_extract_max_tokens: int = 1536
-    llm_verify_max_tokens: int = 1024
-    llm_verify_max_source_chars: int = 8000
     llm_retry_truncate_chars: int = 16000
     llm_retry_truncate_factor: float = 0.7
 

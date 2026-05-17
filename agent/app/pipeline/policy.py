@@ -19,7 +19,6 @@ class PipelinePolicy:
     conflict_title_similarity_threshold: float
     max_conflict_checks_per_task: int
     extraction_guidance: str
-    verification_enabled: bool
     validate_evidence_in_source: bool
 
 
@@ -72,12 +71,6 @@ def _load_pipeline_policy(
                 data = block
     eg = data.get("extraction_guidance")
     extraction_guidance = eg.strip() if isinstance(eg, str) else ""
-    verification_enabled = _coerce_bool(data.get("verification_enabled"), False)
-    verify_override = os.getenv("PIPELINE_POLICY_VERIFICATION_ENABLED_OVERRIDE")
-    if verify_override is None:
-        verify_override = os.getenv("EVAL_VERIFY_LLM")
-    if verify_override is not None:
-        verification_enabled = _coerce_bool(verify_override, verification_enabled)
 
     abstain = _coerce_float(
         data.get("confidence_abstain_threshold"),
@@ -120,7 +113,6 @@ def _load_pipeline_policy(
         ),
         max_conflict_checks_per_task=max_conflict_checks,
         extraction_guidance=extraction_guidance,
-        verification_enabled=verification_enabled,
         validate_evidence_in_source=validate_evidence_in_source,
     )
 

@@ -1,11 +1,8 @@
 from importlib import import_module
 
-import pytest
-
 from app.pipeline.nodes.extract_tasks import (
     _build_extraction_prompt,
     _structural_item_count,
-    _verify_response_shape,
     extract_tasks,
     parse_extraction_response,
 )
@@ -37,23 +34,16 @@ def test_parse_extraction_response_repairs_common_json_slips() -> None:
 
 
 def test_extract_tasks_retries_until_valid(monkeypatch) -> None:
-    """Retries on malformed JSON, then succeeds.
-
-    The policy's verification pass is intentionally disabled here so the
-    assertion isolates the retry behaviour of ``_extract_with_retry`` and
-    stays stable across policy default changes. Verification is covered
-    separately by the ``_enable_verification`` tests below.
-    """
+    """Retries on malformed JSON, then succeeds."""
 
     extract_module = import_module("app.pipeline.nodes.extract_tasks")
 
-    class _NoVerifyPolicy:
-        verification_enabled = False
+    class _StubPolicy:
         validate_evidence_in_source = False
         extraction_guidance = ""
         version = "test"
 
-    monkeypatch.setattr(extract_module, "get_pipeline_policy", lambda: _NoVerifyPolicy())
+    monkeypatch.setattr(extract_module, "get_pipeline_policy", lambda: _StubPolicy())
     calls = {"count": 0}
 
     def _fake_call_llm(_prompt: str, temperature: float = 0.0, **_kwargs) -> str:
@@ -80,13 +70,12 @@ def test_extract_tasks_retries_until_valid(monkeypatch) -> None:
 def test_extract_tasks_repairs_before_retry(monkeypatch) -> None:
     extract_module = import_module("app.pipeline.nodes.extract_tasks")
 
-    class _NoVerifyPolicy:
-        verification_enabled = False
+    class _StubPolicy:
         validate_evidence_in_source = False
         extraction_guidance = ""
         version = "test"
 
-    monkeypatch.setattr(extract_module, "get_pipeline_policy", lambda: _NoVerifyPolicy())
+    monkeypatch.setattr(extract_module, "get_pipeline_policy", lambda: _StubPolicy())
     calls = {"count": 0}
 
     def _fake_call_llm(_prompt: str, temperature: float = 0.0, **_kwargs) -> str:
@@ -104,13 +93,12 @@ def test_extract_tasks_repairs_before_retry(monkeypatch) -> None:
 def test_extract_tasks_respects_configured_retry_limit(monkeypatch) -> None:
     extract_module = import_module("app.pipeline.nodes.extract_tasks")
 
-    class _NoVerifyPolicy:
-        verification_enabled = False
+    class _StubPolicy:
         validate_evidence_in_source = False
         extraction_guidance = ""
         version = "test"
 
-    monkeypatch.setattr(extract_module, "get_pipeline_policy", lambda: _NoVerifyPolicy())
+    monkeypatch.setattr(extract_module, "get_pipeline_policy", lambda: _StubPolicy())
     monkeypatch.setattr(extract_module.settings, "extraction_max_retries", 1)
     calls = {"count": 0}
 
@@ -135,13 +123,12 @@ def test_structural_item_count_uses_visible_list_shape_only() -> None:
 def test_extract_tasks_retries_when_structured_list_is_undercovered(monkeypatch) -> None:
     extract_module = import_module("app.pipeline.nodes.extract_tasks")
 
-    class _NoVerifyPolicy:
-        verification_enabled = False
+    class _StubPolicy:
         validate_evidence_in_source = False
         extraction_guidance = ""
         version = "test"
 
-    monkeypatch.setattr(extract_module, "get_pipeline_policy", lambda: _NoVerifyPolicy())
+    monkeypatch.setattr(extract_module, "get_pipeline_policy", lambda: _StubPolicy())
     responses = iter(
         [
             '{"tasks":[{"title":"Prepare report","assignee":"A"}]}',
@@ -246,7 +233,6 @@ def test_extraction_prompt_is_instruction_only_and_bounds_source_text(monkeypatc
     extract_module = import_module("app.pipeline.nodes.extract_tasks")
 
     class _NoGuidancePolicy:
-        verification_enabled = False
         validate_evidence_in_source = True
         extraction_guidance = ""
         version = "test"
@@ -275,7 +261,6 @@ def test_extraction_prompt_covers_lists_threads_and_delegated_performers(monkeyp
     extract_module = import_module("app.pipeline.nodes.extract_tasks")
 
     class _GuidancePolicy:
-        verification_enabled = False
         validate_evidence_in_source = True
         extraction_guidance = ""
         version = "test"
@@ -295,112 +280,3 @@ def test_extraction_prompt_covers_lists_threads_and_delegated_performers(monkeyp
     assert "open checklist rows" in user_prompt
     assert "named performer is the assignee" in user_prompt
     assert "final resolved state" in user_prompt
-
-
-def test_verify_prompt_instructs_to_check_phrase_class_against_text() -> None:
-    """The verify pass (when enabled) must re-check deadline_v2.phrase_class
-    against the original text so that LLM misclassifications like
-    text="tomorrow" → phrase_class="today" can be corrected at production
-    quality. This is the only general-purpose lever available for catching
-    these misclassifications without adding language-specific patterns to
-    Python code — the LLM understands all source languages, the prompt just
-    tells it where to focus.
-    """
-    from app.pipeline.prompts import EXTRACTION_VERIFY_USER_V1
-
-    prompt = EXTRACTION_VERIFY_USER_V1.lower()
-    assert "phrase_class" in prompt
-    assert "phrase_params" in prompt
-    # Confirms the prompt directs the verifier to compare phrase_class with
-    # the text semantics — the core anti-Case-G mechanism.
-    assert "tomorrow" in prompt and "today" in prompt
-
-
-class _StubPolicy:
-    """Minimal policy stub that enables verification without loading YAML."""
-
-    verification_enabled = True
-    validate_evidence_in_source = False
-    extraction_guidance = ""
-    version = "test"
-
-
-@pytest.fixture
-def _enable_verification(monkeypatch):
-    extract_module = import_module("app.pipeline.nodes.extract_tasks")
-    monkeypatch.setattr(extract_module, "get_pipeline_policy", lambda: _StubPolicy())
-    return extract_module
-
-
-def test_verify_response_shape_distinguishes_empty_from_malformed():
-    """A valid `tasks: []` is intentional rejection; a malformed blob is a data loss risk."""
-    is_valid, out = _verify_response_shape('{"tasks": []}')
-    assert is_valid is True
-    assert out == []
-
-    is_valid, out = _verify_response_shape("not-json")
-    assert is_valid is False
-    assert out == []
-
-    is_valid, out = _verify_response_shape("null")
-    assert is_valid is False
-
-    is_valid, out = _verify_response_shape('{"something_else": 1}')
-    assert is_valid is False
-
-
-def test_verify_falls_back_to_pre_verify_when_response_malformed(_enable_verification, monkeypatch):
-    """Regression: a malformed verify response must not wipe the extracted list."""
-    extract_module = _enable_verification
-
-    responses = iter(
-        [
-            '{"tasks":[{"title":"Submit report","assignee":"Bob"}]}',
-            "not-json",
-        ]
-    )
-
-    def _fake_call_llm(_prompt: str, temperature: float = 0.0, **_kwargs) -> str:
-        _ = temperature
-        return next(responses)
-
-    monkeypatch.setattr(extract_module, "call_llm", _fake_call_llm)
-    result = extract_tasks(
-        {
-            "cleaned_text": "Please submit report by Friday",
-            "source_type": "gmail",
-            "metadata": {},
-            "errors": [],
-        }
-    )
-    titles = [t["title"] for t in result["extracted_tasks"]]
-    assert titles == ["Submit report"]
-    assert any("verification response unparseable" in e for e in result["errors"])
-
-
-def test_verify_trusts_intentional_empty_rejection(_enable_verification, monkeypatch):
-    """When the verifier legitimately returns `tasks: []`, we must honour it."""
-    extract_module = _enable_verification
-
-    responses = iter(
-        [
-            '{"tasks":[{"title":"Marketing idea"}]}',
-            '{"tasks":[]}',
-        ]
-    )
-
-    def _fake_call_llm(_prompt: str, temperature: float = 0.0, **_kwargs) -> str:
-        _ = temperature
-        return next(responses)
-
-    monkeypatch.setattr(extract_module, "call_llm", _fake_call_llm)
-    result = extract_tasks(
-        {
-            "cleaned_text": "Just a fun marketing idea to discuss, no action yet.",
-            "source_type": "gmail",
-            "metadata": {},
-            "errors": [],
-        }
-    )
-    assert result["extracted_tasks"] == []
-    assert not any("unparseable" in e for e in result["errors"])

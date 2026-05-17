@@ -8,8 +8,6 @@ from app.pipeline.prompts import (
     EXTRACTION_RETRY_HINT_V1,
     EXTRACTION_SYSTEM_V1,
     EXTRACTION_USER_V1,
-    EXTRACTION_VERIFY_SYSTEM_V1,
-    EXTRACTION_VERIFY_USER_V1,
 )
 from app.pipeline.state import PipelineState
 
@@ -272,68 +270,6 @@ def _build_extraction_prompt(
     return system_prompt, user_prompt
 
 
-def _verify_response_shape(raw: str) -> tuple[bool, list[dict]]:
-    """Distinguish a structurally valid verify reply from a broken/empty one.
-
-    Returns ``(is_structurally_valid, parsed_tasks)``. ``is_structurally_valid``
-    is True when the response is JSON we can recognise (an object with a
-    ``tasks`` list, or a bare list). An empty ``tasks: []`` is **valid**: it
-    means the verifier intentionally rejected every candidate. A malformed
-    JSON, a non-object/non-list top level, or a missing ``tasks`` key is
-    **invalid** — we must not silently drop the candidate list in that case.
-    """
-    repaired = _repair_jsonish(raw)
-    try:
-        data = json.loads(repaired)
-    except json.JSONDecodeError:
-        return False, []
-    if isinstance(data, dict):
-        if isinstance(data.get("tasks"), list):
-            return True, parse_extraction_response(repaired)
-        if isinstance(data.get("items"), list) or isinstance(data.get("data"), list):
-            return True, parse_extraction_response(repaired)
-        return False, []
-    if isinstance(data, list):
-        return True, parse_extraction_response(repaired)
-    return False, []
-
-
-def _verify_extracted_tasks(state: PipelineState, tasks: list[dict], errors: list[str]) -> list[dict]:
-    policy = get_pipeline_policy()
-    if not policy.verification_enabled or not tasks:
-        return tasks
-    text = str(state.get("cleaned_text") or "")
-    if not text.strip():
-        return tasks
-    metadata = state.get("metadata") or {}
-    body = EXTRACTION_VERIFY_USER_V1
-    verify_chars = max(1000, int(settings.llm_verify_max_source_chars))
-    body = body.replace("{text}", text[:verify_chars])
-    body = body.replace("{source_type}", str(state.get("source_type")))
-    body = body.replace("{sender}", str(metadata.get("sender")))
-    body = body.replace("{sent_at}", str(metadata.get("sent_at")))
-    body = body.replace("{subject}", str(metadata.get("subject")))
-    body = body.replace("{tasks_json}", json.dumps(tasks, ensure_ascii=False))
-    try:
-        with llm_call_context(node_name="extract_tasks", call_purpose="verify", verification_used=True):
-            raw = call_llm(
-                body,
-                temperature=0.0,
-                system_prompt=EXTRACTION_VERIFY_SYSTEM_V1,
-                max_tokens=max(128, int(settings.llm_verify_max_tokens)),
-            )
-    except Exception as exc:
-        errors.append(f"extract_tasks: verification pass failed, using unverified tasks ({exc})")
-        return tasks
-    is_valid, out = _verify_response_shape(raw)
-    if not is_valid:
-        errors.append(
-            "extract_tasks: verification response unparseable; falling back to pre-verify tasks"
-        )
-        return tasks
-    return out
-
-
 def _extract_with_retry(
     state: PipelineState,
     text: str,
@@ -395,5 +331,4 @@ def extract_tasks(state: PipelineState) -> dict:
 
     merged = _merge_extracted_tasks(all_chunk_results)
     compacted = _compact_tasks(merged)
-    compacted = _verify_extracted_tasks(state, compacted, errors)
     return {"extracted_tasks": compacted, "errors": errors}
