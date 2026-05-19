@@ -1,0 +1,1052 @@
+[
+  {
+    "id": "ac-157",
+    "category": "conflict_assignee",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Email thread:\n\n[Email 1]\nĐỗ Văn Hải phụ trách wireframe trang chủ, nộp trước thứ Sáu.\n\n[Email 2]\nĐã đổi: Lê Minh Đức phụ trách wireframe trang chủ thay Đỗ Văn Hải.",
+    "metadata": {
+      "sent_at": "2026-04-05",
+      "sender": "lead@company.com",
+      "subject": "Re: assignment"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Wireframe trang chủ",
+          "assignee": "Lê Minh Đức",
+          "deadline": "2026-04-10",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "assignee_conflict",
+          "task_title": "Wireframe trang chủ",
+          "source_a_value": "Đỗ Văn Hải",
+          "source_b_value": "Lê Minh Đức"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Đỗ Văn Hải, Email 2: reassigned to Lê Minh Đức",
+    "eval_existing_tasks": [
+      {
+        "title": "Wireframe trang chủ",
+        "assignee": "Đỗ Văn Hải",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-157-email1",
+        "id": "eval-fixture-ac-157"
+      }
+    ]
+  },
+  {
+    "id": "dc-138",
+    "category": "conflict_deadline",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Email thread:\n\n[Email 1 — 2026-03-30]\nNgô Thanh Tùng, tài liệu thiết kế nộp trước thứ Sáu nhé.\n\n[Email 2 — 2026-04-01]\nCập nhật: tài liệu thiết kế cần nộp trước ngày mai.",
+    "metadata": {
+      "sent_at": "2026-04-01",
+      "sender": "pm@company.com",
+      "subject": "Re: deadline"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Tài liệu thiết kế",
+          "assignee": "Ngô Thanh Tùng",
+          "deadline": "2026-04-02",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "deadline_conflict",
+          "task_title": "Tài liệu thiết kế",
+          "source_a_value": "2026-04-03",
+          "source_b_value": "2026-04-02"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Friday (2026-04-03), Email 2: tomorrow (2026-04-02)",
+    "eval_existing_tasks": [
+      {
+        "title": "Tài liệu thiết kế",
+        "assignee": "Ngô Thanh Tùng",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-email-1",
+        "id": "eval-fixture-dc-138-email1"
+      }
+    ]
+  },
+  {
+    "id": "dc-141",
+    "category": "conflict_deadline",
+    "source_type": "gmail",
+    "language": "en",
+    "input_text": "Email thread:\n\n[Email 1 — 2026-04-02]\nBob, please submit the partnership proposal by Friday.\n\n[Email 2 — 2026-04-04]\nUpdate: the partnership proposal is now due by tomorrow.",
+    "metadata": {
+      "sent_at": "2026-04-04",
+      "sender": "pm@company.com",
+      "subject": "Re: deadline"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Partnership proposal",
+          "assignee": "Bob",
+          "deadline": "2026-04-05",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "deadline_conflict",
+          "task_title": "Partnership proposal",
+          "source_a_value": "2026-04-10",
+          "source_b_value": "2026-04-05"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-05)",
+    "eval_existing_tasks": [
+      {
+        "title": "Partnership proposal",
+        "assignee": "Bob",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-141-email1",
+        "id": "eval-fixture-dc-141"
+      }
+    ]
+  },
+  {
+    "id": "ac-153",
+    "category": "conflict_assignee",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Email thread:\n\n[Email 1]\nLê Minh Đức phụ trách bản đánh giá nhân sự, nộp trước thứ Sáu.\n\n[Email 2]\nĐã đổi: Đặng Tuấn Kiệt phụ trách bản đánh giá nhân sự thay Lê Minh Đức.",
+    "metadata": {
+      "sent_at": "2026-04-01",
+      "sender": "lead@company.com",
+      "subject": "Re: assignment"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Bản đánh giá nhân sự",
+          "assignee": "Đặng Tuấn Kiệt",
+          "deadline": "2026-04-03",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "assignee_conflict",
+          "task_title": "Bản đánh giá nhân sự",
+          "source_a_value": "Lê Minh Đức",
+          "source_b_value": "Đặng Tuấn Kiệt"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Lê Minh Đức, Email 2: reassigned to Đặng Tuấn Kiệt",
+    "eval_existing_tasks": [
+      {
+        "title": "Bản đánh giá nhân sự",
+        "assignee": "Lê Minh Đức",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-153-email1",
+        "id": "eval-fixture-ac-153"
+      }
+    ]
+  },
+  {
+    "id": "dc-143",
+    "category": "conflict_deadline",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Email thread:\n\n[Email 1 — 2026-04-04]\nNguyễn, hợp đồng NDA nộp trước thứ Sáu nhé.\n\n[Email 2 — 2026-04-06]\nCập nhật: hợp đồng NDA cần nộp trước ngày mai.",
+    "metadata": {
+      "sent_at": "2026-04-06",
+      "sender": "pm@company.com",
+      "subject": "Re: deadline"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Hợp đồng NDA",
+          "assignee": "Nguyễn",
+          "deadline": "2026-04-07",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "deadline_conflict",
+          "task_title": "Hợp đồng NDA",
+          "source_a_value": "2026-04-10",
+          "source_b_value": "2026-04-07"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-07)",
+    "eval_existing_tasks": [
+      {
+        "title": "Hợp đồng NDA",
+        "assignee": "Nguyễn",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-143-email1",
+        "id": "eval-fixture-dc-143"
+      }
+    ]
+  },
+  {
+    "id": "ac-156",
+    "category": "conflict_assignee",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Email thread:\n\n[Email 1]\nPhan Đức Anh phụ trách báo cáo tháng 3, nộp trước thứ Sáu.\n\n[Email 2]\nĐã đổi: Phạm Hương phụ trách báo cáo tháng 3 thay Phan Đức Anh.",
+    "metadata": {
+      "sent_at": "2026-04-04",
+      "sender": "lead@company.com",
+      "subject": "Re: assignment"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Báo cáo tháng 3",
+          "assignee": "Phạm Hương",
+          "deadline": "2026-04-10",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "assignee_conflict",
+          "task_title": "Báo cáo tháng 3",
+          "source_a_value": "Phan Đức Anh",
+          "source_b_value": "Phạm Hương"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Phan Đức Anh, Email 2: reassigned to Phạm Hương",
+    "eval_existing_tasks": [
+      {
+        "title": "Báo cáo tháng 3",
+        "assignee": "Phan Đức Anh",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-156-email1",
+        "id": "eval-fixture-ac-156"
+      }
+    ]
+  },
+  {
+    "id": "dc-139",
+    "category": "conflict_deadline",
+    "source_type": "gmail",
+    "language": "en",
+    "input_text": "Email thread:\n\n[Email 1 — 2026-03-31]\nKaren, please submit the test results by Friday.\n\n[Email 2 — 2026-04-02]\nUpdate: the test results is now due by tomorrow.",
+    "metadata": {
+      "sent_at": "2026-04-02",
+      "sender": "pm@company.com",
+      "subject": "Re: deadline"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Test results",
+          "assignee": "Karen",
+          "deadline": "2026-04-03",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "deadline_conflict",
+          "task_title": "Test results",
+          "source_a_value": "2026-04-03",
+          "source_b_value": "2026-04-03"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Friday (2026-04-03), Email 2: tomorrow (2026-04-03)",
+    "eval_existing_tasks": [
+      {
+        "title": "Test results",
+        "assignee": "Karen",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-139-email1",
+        "id": "eval-fixture-dc-139"
+      }
+    ]
+  },
+  {
+    "id": "dc-140",
+    "category": "conflict_deadline",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Email thread:\n\n[Email 1 — 2026-04-01]\nPhan Đức Anh, wireframe trang chủ nộp trước thứ Sáu nhé.\n\n[Email 2 — 2026-04-03]\nCập nhật: wireframe trang chủ cần nộp trước ngày mai.",
+    "metadata": {
+      "sent_at": "2026-04-03",
+      "sender": "pm@company.com",
+      "subject": "Re: deadline"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Wireframe trang chủ",
+          "assignee": "Phan Đức Anh",
+          "deadline": "2026-04-04",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "deadline_conflict",
+          "task_title": "Wireframe trang chủ",
+          "source_a_value": "2026-04-03",
+          "source_b_value": "2026-04-04"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Friday (2026-04-03), Email 2: tomorrow (2026-04-04)",
+    "eval_existing_tasks": [
+      {
+        "title": "Wireframe trang chủ",
+        "assignee": "Phan Đức Anh",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-140-email1",
+        "id": "eval-fixture-dc-140"
+      }
+    ]
+  },
+  {
+    "id": "ac-154",
+    "category": "conflict_assignee",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Email thread:\n\n[Email 1]\nDương Thị Mai phụ trách kết quả kiểm thử, nộp trước thứ Sáu.\n\n[Email 2]\nĐã đổi: Hoàng Nam phụ trách kết quả kiểm thử thay Dương Thị Mai.",
+    "metadata": {
+      "sent_at": "2026-04-02",
+      "sender": "lead@company.com",
+      "subject": "Re: assignment"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Kết quả kiểm thử",
+          "assignee": "Hoàng Nam",
+          "deadline": "2026-04-03",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "assignee_conflict",
+          "task_title": "Kết quả kiểm thử",
+          "source_a_value": "Dương Thị Mai",
+          "source_b_value": "Hoàng Nam"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Dương Thị Mai, Email 2: reassigned to Hoàng Nam",
+    "eval_existing_tasks": [
+      {
+        "title": "Kết quả kiểm thử",
+        "assignee": "Dương Thị Mai",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-154-email1",
+        "id": "eval-fixture-ac-154"
+      }
+    ]
+  },
+  {
+    "id": "dc-142",
+    "category": "conflict_deadline",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Email thread:\n\n[Email 1 — 2026-04-03]\nTrần Thị Bình, tài liệu API docs nộp trước thứ Sáu nhé.\n\n[Email 2 — 2026-04-05]\nCập nhật: tài liệu API docs cần nộp trước ngày mai.",
+    "metadata": {
+      "sent_at": "2026-04-05",
+      "sender": "pm@company.com",
+      "subject": "Re: deadline"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Tài liệu API docs",
+          "assignee": "Trần Thị Bình",
+          "deadline": "2026-04-06",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "deadline_conflict",
+          "task_title": "Tài liệu API docs",
+          "source_a_value": "2026-04-10",
+          "source_b_value": "2026-04-06"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-06)",
+    "eval_existing_tasks": [
+      {
+        "title": "Tài liệu API docs",
+        "assignee": "Trần Thị Bình",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-142-email1",
+        "id": "eval-fixture-dc-142"
+      }
+    ]
+  },
+  {
+    "id": "ac-158",
+    "category": "conflict_assignee",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Email thread:\n\n[Email 1]\nLý Hoàng Long phụ trách wireframe trang chủ, nộp trước thứ Sáu.\n\n[Email 2]\nĐã đổi: Đỗ Văn Hải phụ trách wireframe trang chủ thay Lý Hoàng Long.",
+    "metadata": {
+      "sent_at": "2026-04-06",
+      "sender": "lead@company.com",
+      "subject": "Re: assignment"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Wireframe trang chủ",
+          "assignee": "Đỗ Văn Hải",
+          "deadline": "2026-04-10",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "assignee_conflict",
+          "task_title": "Wireframe trang chủ",
+          "source_a_value": "Lý Hoàng Long",
+          "source_b_value": "Đỗ Văn Hải"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Lý Hoàng Long, Email 2: reassigned to Đỗ Văn Hải",
+    "eval_existing_tasks": [
+      {
+        "title": "Wireframe trang chủ",
+        "assignee": "Lý Hoàng Long",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-158-email1",
+        "id": "eval-fixture-ac-158"
+      }
+    ]
+  },
+  {
+    "id": "dc-150",
+    "category": "conflict_deadline",
+    "source_type": "gmail",
+    "language": "en",
+    "input_text": "Email thread:\n\n[Email 1 — 2026-03-28]\nJack, please submit the meeting minutes by Friday.\n\n[Email 2 — 2026-03-30]\nUpdate: the meeting minutes is now due by tomorrow.",
+    "metadata": {
+      "sent_at": "2026-03-30",
+      "sender": "pm@company.com",
+      "subject": "Re: deadline"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Meeting minutes",
+          "assignee": "Jack",
+          "deadline": "2026-03-31",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "deadline_conflict",
+          "task_title": "Meeting minutes",
+          "source_a_value": "2026-04-03",
+          "source_b_value": "2026-03-31"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Friday (2026-04-03), Email 2: tomorrow (2026-03-31)",
+    "eval_existing_tasks": [
+      {
+        "title": "Meeting minutes",
+        "assignee": "Jack",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-150-email1",
+        "id": "eval-fixture-dc-150"
+      }
+    ]
+  },
+  {
+    "id": "dc-146",
+    "category": "conflict_deadline",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Email thread:\n\n[Email 1 — 2026-04-07]\nNguyễn Văn An, bảng số liệu tài chính nộp trước thứ Sáu nhé.\n\n[Email 2 — 2026-04-09]\nCập nhật: bảng số liệu tài chính cần nộp trước ngày mai.",
+    "metadata": {
+      "sent_at": "2026-04-09",
+      "sender": "pm@company.com",
+      "subject": "Re: deadline"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Bảng số liệu tài chính",
+          "assignee": "Nguyễn Văn An",
+          "deadline": "2026-04-10",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "deadline_conflict",
+          "task_title": "Bảng số liệu tài chính",
+          "source_a_value": "2026-04-10",
+          "source_b_value": "2026-04-10"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-10)",
+    "eval_existing_tasks": [
+      {
+        "title": "Bảng số liệu tài chính",
+        "assignee": "Nguyễn Văn An",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-146-email1",
+        "id": "eval-fixture-dc-146"
+      }
+    ]
+  },
+  {
+    "id": "ac-152",
+    "category": "conflict_assignee",
+    "source_type": "gmail",
+    "language": "en",
+    "input_text": "Email thread:\n\n[Email 1]\nDiana is responsible for the design document, due Friday.\n\n[Email 2]\nUpdate: Olivia will take over the design document from Diana.",
+    "metadata": {
+      "sent_at": "2026-03-31",
+      "sender": "lead@company.com",
+      "subject": "Re: assignment"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Design document",
+          "assignee": "Olivia",
+          "deadline": "2026-04-03",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "assignee_conflict",
+          "task_title": "Design document",
+          "source_a_value": "Diana",
+          "source_b_value": "Olivia"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Diana, Email 2: reassigned to Olivia",
+    "eval_existing_tasks": [
+      {
+        "title": "Design document",
+        "assignee": "Diana",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-152-email1",
+        "id": "eval-fixture-ac-152"
+      }
+    ]
+  },
+  {
+    "id": "ac-160",
+    "category": "conflict_assignee",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Email thread:\n\n[Email 1]\nNguyễn Văn An phụ trách bản đánh giá nhân sự, nộp trước thứ Sáu.\n\n[Email 2]\nĐã đổi: Hoàng Nam phụ trách bản đánh giá nhân sự thay Nguyễn Văn An.",
+    "metadata": {
+      "sent_at": "2026-04-08",
+      "sender": "lead@company.com",
+      "subject": "Re: assignment"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Bản đánh giá nhân sự",
+          "assignee": "Hoàng Nam",
+          "deadline": "2026-04-10",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "assignee_conflict",
+          "task_title": "Bản đánh giá nhân sự",
+          "source_a_value": "Nguyễn Văn An",
+          "source_b_value": "Hoàng Nam"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Nguyễn Văn An, Email 2: reassigned to Hoàng Nam",
+    "eval_existing_tasks": [
+      {
+        "title": "Bản đánh giá nhân sự",
+        "assignee": "Nguyễn Văn An",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-160-email1",
+        "id": "eval-fixture-ac-160"
+      }
+    ]
+  },
+  {
+    "id": "dc-149",
+    "category": "conflict_deadline",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Email thread:\n\n[Email 1 — 2026-04-10]\nLý, bảng số liệu tài chính nộp trước thứ Sáu nhé.\n\n[Email 2 — 2026-04-12]\nCập nhật: bảng số liệu tài chính cần nộp trước ngày mai.",
+    "metadata": {
+      "sent_at": "2026-04-12",
+      "sender": "pm@company.com",
+      "subject": "Re: deadline"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Bảng số liệu tài chính",
+          "assignee": "Lý",
+          "deadline": "2026-04-13",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "deadline_conflict",
+          "task_title": "Bảng số liệu tài chính",
+          "source_a_value": "2026-04-17",
+          "source_b_value": "2026-04-13"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Friday (2026-04-17), Email 2: tomorrow (2026-04-13)",
+    "eval_existing_tasks": [
+      {
+        "title": "Bảng số liệu tài chính",
+        "assignee": "Lý",
+        "deadline": "2026-04-17",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-149-email1",
+        "id": "eval-fixture-dc-149"
+      }
+    ]
+  },
+  {
+    "id": "dc-145",
+    "category": "conflict_deadline",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Email thread:\n\n[Email 1 — 2026-04-06]\nHồ, tài liệu API docs nộp trước thứ Sáu nhé.\n\n[Email 2 — 2026-04-08]\nCập nhật: tài liệu API docs cần nộp trước ngày mai.",
+    "metadata": {
+      "sent_at": "2026-04-08",
+      "sender": "pm@company.com",
+      "subject": "Re: deadline"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Tài liệu API docs",
+          "assignee": "Hồ",
+          "deadline": "2026-04-09",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "deadline_conflict",
+          "task_title": "Tài liệu API docs",
+          "source_a_value": "2026-04-10",
+          "source_b_value": "2026-04-09"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-09)",
+    "eval_existing_tasks": [
+      {
+        "title": "Tài liệu API docs",
+        "assignee": "Hồ",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-145-email1",
+        "id": "eval-fixture-dc-145"
+      }
+    ]
+  },
+  {
+    "id": "ac-155",
+    "category": "conflict_assignee",
+    "source_type": "gmail",
+    "language": "en",
+    "input_text": "Email thread:\n\n[Email 1]\nPaul is responsible for the partnership proposal, due Friday.\n\n[Email 2]\nUpdate: Henry will take over the partnership proposal from Paul.",
+    "metadata": {
+      "sent_at": "2026-04-03",
+      "sender": "lead@company.com",
+      "subject": "Re: assignment"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Partnership proposal",
+          "assignee": "Henry",
+          "deadline": "2026-04-03",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "assignee_conflict",
+          "task_title": "Partnership proposal",
+          "source_a_value": "Paul",
+          "source_b_value": "Henry"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Paul, Email 2: reassigned to Henry",
+    "eval_existing_tasks": [
+      {
+        "title": "Partnership proposal",
+        "assignee": "Paul",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-155-email1",
+        "id": "eval-fixture-ac-155"
+      }
+    ]
+  },
+  {
+    "id": "dc-136",
+    "category": "conflict_deadline",
+    "source_type": "gmail",
+    "language": "en",
+    "input_text": "Email thread:\n\n[Email 1 — 2026-03-28]\nFrank, please submit the March report by Friday.\n\n[Email 2 — 2026-03-30]\nUpdate: the March report is now due by tomorrow.",
+    "metadata": {
+      "sent_at": "2026-03-30",
+      "sender": "pm@company.com",
+      "subject": "Re: deadline"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "March report",
+          "assignee": "Frank",
+          "deadline": "2026-03-31",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "deadline_conflict",
+          "task_title": "March report",
+          "source_a_value": "2026-04-03",
+          "source_b_value": "2026-03-31"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Friday (2026-04-03), Email 2: tomorrow (2026-03-31)",
+    "eval_existing_tasks": [
+      {
+        "title": "March report",
+        "assignee": "Frank",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-136-email1",
+        "id": "eval-fixture-dc-136"
+      }
+    ]
+  },
+  {
+    "id": "ac-151",
+    "category": "conflict_assignee",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Email thread:\n\n[Email 1]\nPhan Đức Anh phụ trách bảng số liệu tài chính, nộp trước thứ Sáu.\n\n[Email 2]\nĐã đổi: Trần Thị Bình phụ trách bảng số liệu tài chính thay Phan Đức Anh.",
+    "metadata": {
+      "sent_at": "2026-03-30",
+      "sender": "lead@company.com",
+      "subject": "Re: assignment"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Bảng số liệu tài chính",
+          "assignee": "Trần Thị Bình",
+          "deadline": "2026-04-03",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "assignee_conflict",
+          "task_title": "Bảng số liệu tài chính",
+          "source_a_value": "Phan Đức Anh",
+          "source_b_value": "Trần Thị Bình"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Phan Đức Anh, Email 2: reassigned to Trần Thị Bình",
+    "eval_existing_tasks": [
+      {
+        "title": "Bảng số liệu tài chính",
+        "assignee": "Phan Đức Anh",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-151-email1",
+        "id": "eval-fixture-ac-151"
+      }
+    ]
+  },
+  {
+    "id": "ac-159",
+    "category": "conflict_assignee",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Email thread:\n\n[Email 1]\nĐỗ Văn Hải phụ trách biên bản họp, nộp trước thứ Sáu.\n\n[Email 2]\nĐã đổi: Lý Hoàng Long phụ trách biên bản họp thay Đỗ Văn Hải.",
+    "metadata": {
+      "sent_at": "2026-04-07",
+      "sender": "lead@company.com",
+      "subject": "Re: assignment"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Biên bản họp",
+          "assignee": "Lý Hoàng Long",
+          "deadline": "2026-04-10",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "assignee_conflict",
+          "task_title": "Biên bản họp",
+          "source_a_value": "Đỗ Văn Hải",
+          "source_b_value": "Lý Hoàng Long"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Đỗ Văn Hải, Email 2: reassigned to Lý Hoàng Long",
+    "eval_existing_tasks": [
+      {
+        "title": "Biên bản họp",
+        "assignee": "Đỗ Văn Hải",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-ac-159-email1",
+        "id": "eval-fixture-ac-159"
+      }
+    ]
+  },
+  {
+    "id": "dc-147",
+    "category": "conflict_deadline",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Email thread:\n\n[Email 1 — 2026-04-08]\nHoàng Nam, proposal hợp tác nộp trước thứ Sáu nhé.\n\n[Email 2 — 2026-04-10]\nCập nhật: proposal hợp tác cần nộp trước ngày mai.",
+    "metadata": {
+      "sent_at": "2026-04-10",
+      "sender": "pm@company.com",
+      "subject": "Re: deadline"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Proposal hợp tác",
+          "assignee": "Hoàng Nam",
+          "deadline": "2026-04-11",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "deadline_conflict",
+          "task_title": "Proposal hợp tác",
+          "source_a_value": "2026-04-10",
+          "source_b_value": "2026-04-11"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-11)",
+    "eval_existing_tasks": [
+      {
+        "title": "Proposal hợp tác",
+        "assignee": "Hoàng Nam",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-147-email1",
+        "id": "eval-fixture-dc-147"
+      }
+    ]
+  },
+  {
+    "id": "dc-148",
+    "category": "conflict_deadline",
+    "source_type": "gmail",
+    "language": "en",
+    "input_text": "Email thread:\n\n[Email 1 — 2026-04-09]\nPaul, please submit the design document by Friday.\n\n[Email 2 — 2026-04-11]\nUpdate: the design document is now due by tomorrow.",
+    "metadata": {
+      "sent_at": "2026-04-11",
+      "sender": "pm@company.com",
+      "subject": "Re: deadline"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Design document",
+          "assignee": "Paul",
+          "deadline": "2026-04-12",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "deadline_conflict",
+          "task_title": "Design document",
+          "source_a_value": "2026-04-17",
+          "source_b_value": "2026-04-12"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Friday (2026-04-17), Email 2: tomorrow (2026-04-12)",
+    "eval_existing_tasks": [
+      {
+        "title": "Design document",
+        "assignee": "Paul",
+        "deadline": "2026-04-17",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-148-email1",
+        "id": "eval-fixture-dc-148"
+      }
+    ]
+  },
+  {
+    "id": "dc-144",
+    "category": "conflict_deadline",
+    "source_type": "gmail",
+    "language": "en",
+    "input_text": "Email thread:\n\n[Email 1 — 2026-04-05]\nOlivia, please submit the test results by Friday.\n\n[Email 2 — 2026-04-07]\nUpdate: the test results is now due by tomorrow.",
+    "metadata": {
+      "sent_at": "2026-04-07",
+      "sender": "pm@company.com",
+      "subject": "Re: deadline"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Test results",
+          "assignee": "Olivia",
+          "deadline": "2026-04-08",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "deadline_conflict",
+          "task_title": "Test results",
+          "source_a_value": "2026-04-10",
+          "source_b_value": "2026-04-08"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Friday (2026-04-10), Email 2: tomorrow (2026-04-08)",
+    "eval_existing_tasks": [
+      {
+        "title": "Test results",
+        "assignee": "Olivia",
+        "deadline": "2026-04-10",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-144-email1",
+        "id": "eval-fixture-dc-144"
+      }
+    ]
+  },
+  {
+    "id": "dc-137",
+    "category": "conflict_deadline",
+    "source_type": "gmail",
+    "language": "vi",
+    "input_text": "Email thread:\n\n[Email 1 — 2026-03-29]\nTrần, proposal hợp tác nộp trước thứ Sáu nhé.\n\n[Email 2 — 2026-03-31]\nCập nhật: proposal hợp tác cần nộp trước ngày mai.",
+    "metadata": {
+      "sent_at": "2026-03-31",
+      "sender": "pm@company.com",
+      "subject": "Re: deadline"
+    },
+    "expected": {
+      "tasks": [
+        {
+          "title": "Proposal hợp tác",
+          "assignee": "Trần",
+          "deadline": "2026-04-01",
+          "priority": null
+        }
+      ],
+      "conflicts": [
+        {
+          "type": "deadline_conflict",
+          "task_title": "Proposal hợp tác",
+          "source_a_value": "2026-04-03",
+          "source_b_value": "2026-04-01"
+        }
+      ],
+      "missing_fields": []
+    },
+    "annotation_notes": "Email 1: Friday (2026-04-03), Email 2: tomorrow (2026-04-01)",
+    "eval_existing_tasks": [
+      {
+        "title": "Proposal hợp tác",
+        "assignee": "Trần",
+        "deadline": "2026-04-03",
+        "priority": null,
+        "source_ref": "eval-fixture-dc-137-email1",
+        "id": "eval-fixture-dc-137"
+      }
+    ]
+  }
+]

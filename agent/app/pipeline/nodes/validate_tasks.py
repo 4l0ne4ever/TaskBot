@@ -7,6 +7,7 @@ from app.pipeline.llm import call_llm, llm_call_context
 from app.pipeline.policy import get_pipeline_policy
 from app.pipeline.prompts import CONFLICT_USER_V1
 from app.pipeline.state import PipelineState
+from app.services.cross_source_candidates_loader import load_cross_source_candidates_sync
 from app.services.existing_tasks_loader import load_existing_tasks_for_validate_sync
 from app.services.observability import record_pipeline_run_trace
 from app.services.task_dedupe import title_similarity
@@ -117,7 +118,20 @@ def _classify_conflict(task_a: dict, task_b: dict) -> dict:
     return _parse_conflict_response(raw)
 
 
-def _build_conflicts_for_task(task: dict, candidates: list[dict], max_checks: int) -> list[dict]:
+def _build_conflicts_for_task(
+    task: dict,
+    candidates: list[dict],
+    max_checks: int,
+    *,
+    source_text: str | None = None,
+) -> list[dict]:
+    # Phase A' scope: a thread-update marker in the new task's source text
+    # promotes the cross-document conflict from plain ``inter_doc`` to
+    # ``thread_update`` — matches the real user journey where a follow-up
+    # email ("Update:", "Đã đổi:") arrives after the original task was
+    # already persisted. Marker detection reuses _has_thread_update_marker so
+    # the intra-batch and inter-doc paths stay consistent.
+    scope = "thread_update" if _has_thread_update_marker(source_text) else "inter_doc"
     conflicts: list[dict] = []
     checks = 0
     for existing in candidates:
@@ -134,6 +148,7 @@ def _build_conflicts_for_task(task: dict, candidates: list[dict], max_checks: in
                 "source_a_ref": task.get("source_ref"),
                 "source_b_ref": existing.get("source_ref") or existing.get("id"),
                 "task_title": task.get("title"),
+                "scope": scope,
             }
         )
     return conflicts
@@ -154,11 +169,54 @@ def _task_ref(task: dict, fallback_index: int) -> str:
     return f"batch-{fallback_index}"
 
 
+# ── Phase 2.1: thread-update marker detection ──────────────────────────────────
+#
+# A small, language-agnostic set of *structural* markers that signal "this
+# email or section supersedes the earlier one for the same deliverable".
+# Deliberately minimal — the anti-pattern from `taskbot-prompts` is to grow
+# this list into a closed-set keyword dictionary. Each pattern targets a
+# canonical announcement form (an "Update:" / "Cập nhật:" prefix, a
+# reassignment verb, a "now-due / now-handled" predicate). If a future
+# language carries a marker not in this list, the pair still gets detected
+# as a conflict — the marker only promotes ``scope`` from "intra_batch" to
+# "thread_update" so downstream UI can surface the timeline.
+
+_THREAD_UPDATE_MARKER_PATTERNS: tuple[re.Pattern[str], ...] = (
+    # Explicit "Update:" / "Updated:" / "Revised:" / "Cập nhật:" / "Đã đổi:"
+    # — colon-suffixed announcement form.
+    re.compile(
+        r"\b(?:update|updated|revised|cập\s+nhật|đã\s+đổi|đổi\s+lại)\s*:",
+        re.IGNORECASE,
+    ),
+    # "Revised" / "Sửa đổi" / "Sửa lại" — adjective / verb without colon.
+    re.compile(r"\b(?:revised|sửa\s+(?:lại|đổi))\b", re.IGNORECASE),
+    # "Now due / assigned / handled by" — predicate form.
+    re.compile(r"\bnow\s+(?:due|assigned|handled)\b", re.IGNORECASE),
+    # Reassignment verbs.
+    re.compile(r"\breassign(?:ed|ing)?\b", re.IGNORECASE),
+    re.compile(r"\bthay\s+(?:vì|cho)\b", re.IGNORECASE),
+)
+
+
+def _has_thread_update_marker(source_text: str | None) -> bool:
+    """Return True when ``source_text`` carries any thread-update marker.
+
+    Pure function: the same input always yields the same answer. Callers use
+    this to decide between ``scope="intra_batch"`` (no thread structure
+    detected) and ``scope="thread_update"`` (the source explicitly signals a
+    later revision).
+    """
+    if not source_text or not isinstance(source_text, str):
+        return False
+    return any(p.search(source_text) for p in _THREAD_UPDATE_MARKER_PATTERNS)
+
+
 def _detect_intra_batch_conflicts(
     candidate_tasks: list[tuple[int, dict]],
     policy,
     *,
     budget: int,
+    source_text: str | None = None,
 ) -> tuple[list[dict], list[tuple[int, str]]]:
     """Pairwise conflict detection across tasks emitted in the same run.
 
@@ -178,6 +236,13 @@ def _detect_intra_batch_conflicts(
     conflict prompt (``CONFLICT_USER_V1``) is the general classifier and
     title_similarity (same threshold as inter-doc) is the scoping filter.
 
+    Scope tagging (Phase 2.1):
+        ``scope="thread_update"`` when ``source_text`` carries a structural
+        thread-update marker (see ``_has_thread_update_marker``), otherwise
+        ``scope="intra_batch"``. The promotion is purely informational — UI
+        and downstream graph-traversal code can surface the thread timeline
+        explicitly. Resolution semantics (last-writer-wins) are unchanged.
+
     Returns
     -------
     (conflicts, supersedes)
@@ -193,6 +258,7 @@ def _detect_intra_batch_conflicts(
         return conflicts, supersedes
 
     threshold = policy.conflict_title_similarity_threshold
+    scope = "thread_update" if _has_thread_update_marker(source_text) else "intra_batch"
     n = len(candidate_tasks)
     used: set[int] = set()
     for i in range(n):
@@ -228,13 +294,127 @@ def _detect_intra_batch_conflicts(
                     "source_a_ref": ref_a,
                     "source_b_ref": ref_b,
                     "task_title": task_b.get("title") or title_b,
-                    "scope": "intra_batch",
+                    "scope": scope,
                 }
             )
             supersedes.append((idx_a, ref_b))
             used.add(i)
             break
     return conflicts, supersedes
+
+
+# ── Phase 2.2: multi-source conflict detection ────────────────────────────────
+#
+# "Multi-source" means *the same deliverable shows up across two different
+# platforms* — e.g., a Gmail thread asks for a report, then a Drive doc
+# repeats the same ask. The cross-platform aspect is what makes this scope
+# distinct from intra-batch / inter-doc-same-type conflict detection.
+#
+# Filter pipeline (all must hold):
+#   (a) title_similarity ≥ policy.multi_source_title_similarity_threshold
+#   (b) different ``source_doc_id`` AND different ``source_type``
+#   (c) entity-overlap rule (hybrid, see ``_entity_overlap_compatible``):
+#       - if BOTH sides have a non-empty person-entity set, require ≥1 overlap
+#       - if either side's set is empty, the entity check is skipped — we do
+#         not penalise a task because the LLM couldn't extract an assignee
+#
+# Resolution is intentionally informational at this layer: we emit a conflict
+# event so downstream UI / digest features can surface it. We do not call
+# the LLM here — title similarity + entity overlap is a high-precision
+# structural signal, and an extra LLM round-trip per cross-source candidate
+# pair would be expensive and have non-trivial latency.
+
+
+def _entity_overlap_compatible(
+    new_entities: set[str], candidate_entities: set[str]
+) -> bool:
+    """Hybrid overlap check.
+
+    - If either side has an empty set → True (fallback: trust title + cross-
+      source filters; don't penalise tasks with no extracted assignee).
+    - Otherwise → True iff at least one canonical appears in both sets.
+    """
+    if not new_entities or not candidate_entities:
+        return True
+    return bool(new_entities & candidate_entities)
+
+
+def _new_task_entity_set(task: dict) -> set[str]:
+    """At validate-time the entity-extractor hasn't yet emitted relationships
+    for the new task, so its 'entity set' is just whatever the normalize
+    step produced for ``assignee_canonical`` (the only signal we have)."""
+    canonical = task.get("assignee_canonical")
+    if isinstance(canonical, str) and canonical.strip():
+        return {canonical.strip()}
+    return set()
+
+
+def _detect_multi_source_conflicts(
+    new_tasks: list[tuple[int, dict]],
+    candidates: list[dict],
+    policy,
+    *,
+    new_source_doc_id: str | None,
+    new_source_type: str | None,
+) -> list[dict]:
+    """Pure-function cross-source detector. Takes the new batch's validated
+    tasks + a pre-loaded list of cross-source candidates (from
+    ``cross_source_candidates_loader``) and returns conflict records.
+
+    The pure-function shape lets us unit-test the matching logic without a
+    database — the loader is tested separately.
+    """
+    conflicts: list[dict] = []
+    if not new_tasks or not candidates:
+        return conflicts
+
+    threshold = policy.multi_source_title_similarity_threshold
+
+    for idx_new, new_task in new_tasks:
+        title_new = str(new_task.get("title") or "").strip()
+        if not title_new:
+            continue
+        new_entities = _new_task_entity_set(new_task)
+        for cand in candidates:
+            title_cand = str(cand.get("title") or "").strip()
+            if not title_cand:
+                continue
+            # (b) different source_doc_id AND different source_type
+            cand_doc = cand.get("source_doc_id")
+            cand_type = cand.get("source_type")
+            if not cand_doc or not cand_type:
+                continue
+            if new_source_doc_id and cand_doc == new_source_doc_id:
+                continue
+            if new_source_type and cand_type == new_source_type:
+                continue
+            # (a) title similarity
+            if title_similarity(title_new, title_cand) < threshold:
+                continue
+            # (c) entity overlap (hybrid)
+            cand_entities = cand.get("entity_canonicals") or set()
+            if not isinstance(cand_entities, (set, frozenset)):
+                cand_entities = set(cand_entities)
+            if not _entity_overlap_compatible(new_entities, cand_entities):
+                continue
+            new_ref = _task_ref(new_task, idx_new)
+            conflicts.append(
+                {
+                    "conflict_type": "multi_source",
+                    "description": (
+                        f"Same deliverable observed across {cand_type} (existing) "
+                        f"and {new_source_type or 'current'} (new)"
+                    ),
+                    "source_a_ref": new_ref,
+                    # Store the existing source_doc_id as the b-ref so the
+                    # downstream save_tasks_service persists the linkage
+                    # without needing a new column.
+                    "source_b_ref": cand_doc,
+                    "task_title": new_task.get("title") or title_new,
+                    "scope": "multi_source",
+                }
+            )
+    return conflicts
 
 
 def validate_tasks(state: PipelineState) -> dict:
@@ -312,7 +492,12 @@ def validate_tasks(state: PipelineState) -> dict:
         ]
         try:
             conflicts.extend(
-                _build_conflicts_for_task(enriched, similar_candidates, policy.max_conflict_checks_per_task)
+                _build_conflicts_for_task(
+                    enriched,
+                    similar_candidates,
+                    policy.max_conflict_checks_per_task,
+                    source_text=state.get("cleaned_text") if isinstance(state.get("cleaned_text"), str) else None,
+                )
             )
         except Exception as exc:
             errors.append(f"validate_tasks conflict check failed: {exc}")
@@ -325,6 +510,7 @@ def validate_tasks(state: PipelineState) -> dict:
             intra_candidates,
             policy,
             budget=policy.max_conflict_checks_per_task,
+            source_text=state.get("cleaned_text") if isinstance(state.get("cleaned_text"), str) else None,
         )
         conflicts.extend(intra_conflicts)
         for earlier_idx, later_ref in supersedes:
@@ -343,6 +529,35 @@ def validate_tasks(state: PipelineState) -> dict:
                 existing_uncertainty.setdefault("reason", reason)
     except Exception as exc:
         errors.append(f"validate_tasks intra-batch conflict check failed: {exc}")
+
+    # ── Phase 2.2: multi-source (cross-platform) conflict detection ──────────
+    # Best-effort like the other conflict passes: a loader failure (e.g. DB
+    # unreachable) is logged into ``errors`` but never blocks task validation.
+    try:
+        ms_candidates = load_cross_source_candidates_sync(
+            state,
+            lookback_days=policy.multi_source_conflict_lookback_days,
+        )
+        if ms_candidates:
+            ms_new_tasks = [
+                (idx, vt) for idx, vt in enumerate(validated_tasks) if not vt.get("abstained")
+            ]
+            new_source_doc_id = (
+                state.get("source_doc_id") if isinstance(state.get("source_doc_id"), str) else None
+            )
+            new_source_type = (
+                state.get("source_type") if isinstance(state.get("source_type"), str) else None
+            )
+            ms_conflicts = _detect_multi_source_conflicts(
+                ms_new_tasks,
+                ms_candidates,
+                policy,
+                new_source_doc_id=new_source_doc_id,
+                new_source_type=new_source_type,
+            )
+            conflicts.extend(ms_conflicts)
+    except Exception as exc:
+        errors.append(f"validate_tasks multi-source conflict check failed: {exc}")
 
     from app.pipeline.llm import summarize_provenance
 

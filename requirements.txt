@@ -1,6 +1,10 @@
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 sqlalchemy>=2.0.29
+# greenlet is SQLAlchemy's async runtime dependency; explicit so a
+# `pip install -r requirements.txt` on a clean venv yields a working async
+# session (Python 3.13 build of SQLAlchemy does not auto-pull it).
+greenlet>=3.0
 asyncpg>=0.29.0
 psycopg2-binary>=2.9.9
 alembic>=1.13.1

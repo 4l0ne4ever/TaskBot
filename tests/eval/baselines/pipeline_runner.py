@@ -241,10 +241,17 @@ def extract_pipeline(
     for c in conflicts:
         if not isinstance(c, dict):
             continue
+        # Preserve Phase 2 scope tagging + source refs so downstream eval
+        # comparisons can verify thread_update / multi_source detection. The
+        # legacy 3-key shape (type / task_title / description) is preserved
+        # for back-compat with older reports.
         clean_conflicts.append({
             "type": c.get("conflict_type", ""),
             "task_title": c.get("task_title", ""),
             "description": c.get("description"),
+            "scope": c.get("scope"),
+            "source_a_ref": c.get("source_a_ref"),
+            "source_b_ref": c.get("source_b_ref"),
         })
 
     missing = []

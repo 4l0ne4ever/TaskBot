@@ -11,6 +11,7 @@ from app.models.source_document import SourceDocument
 from app.models.task import Task
 from app.pipeline.state import PipelineState
 from app.services.assignee_resolver import get_default_resolver
+from app.services.entity_extractor import update_entity_graph_for_tasks
 from app.services.task_dedupe import pick_task_to_reuse
 
 
@@ -211,6 +212,7 @@ async def async_save_tasks(state: PipelineState) -> dict:
                         existing_tid = _parse_uuid(str(ref_b))
                         if existing_tid:
                             task_ids.append(existing_tid)
+                    scope_val = c.get("scope")
                     session.add(
                         Conflict(
                             id=uuid.uuid4(),
@@ -220,6 +222,7 @@ async def async_save_tasks(state: PipelineState) -> dict:
                             source_a_ref=str(c["source_a_ref"]) if c.get("source_a_ref") else None,
                             source_b_ref=str(ref_b) if ref_b else None,
                             task_ids=task_ids or None,
+                            scope=scope_val if isinstance(scope_val, str) and scope_val else None,
                         )
                     )
 
@@ -252,6 +255,43 @@ async def async_save_tasks(state: PipelineState) -> dict:
             resolver.learn(str(user_uuid), canonical)
     except Exception as exc:
         errors.append(f"save_tasks: assignee_resolver.learn failed: {exc}")
+
+    # Phase 1.2: derive person entities + assigned_to/mentioned_in edges
+    # from the just-committed tasks. Best-effort, separate transaction —
+    # failures here are logged but never roll back the tasks themselves
+    # (entity graph is derived data and re-runnable; idempotent per task).
+    try:
+        entity_payloads: list[dict] = []
+        for vt in validated_tasks:
+            if bool(vt.get("abstained")):
+                continue
+            title = vt.get("title")
+            if not isinstance(title, str) or not title.strip():
+                continue
+            tid = title_to_new_id.get(title.strip())
+            if tid is None:
+                continue
+            entity_payloads.append(
+                {
+                    "id": tid,
+                    "title": title,
+                    "description": vt.get("description"),
+                    "assignee": vt.get("assignee"),
+                    "assignee_canonical": vt.get("assignee_canonical"),
+                    "evidence_quote": vt.get("evidence_quote"),
+                }
+            )
+        if entity_payloads:
+            async with AsyncSessionLocal() as eg_session:
+                async with eg_session.begin():
+                    await update_entity_graph_for_tasks(
+                        eg_session,
+                        user_id=user_uuid,
+                        tasks=entity_payloads,
+                        source_doc_id=source_doc_uuid,
+                    )
+    except Exception as exc:
+        errors.append(f"save_tasks: entity_extractor failed: {exc}")
 
     return {"saved_task_ids": saved_task_ids, "errors": errors}
 

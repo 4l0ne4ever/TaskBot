@@ -77,6 +77,12 @@ class Settings(BaseSettings):
     extract_merge_jaccard_threshold: float = 0.75
     task_reuse_similarity_threshold: float = 0.85
     conflict_title_similarity_threshold: float = 0.7
+    # Phase 2.2 — multi-source (cross-platform) conflict detection thresholds.
+    # Decoupled from the intra-batch threshold above because cross-document
+    # false positives are more visible to the user (two unrelated docs would
+    # be flagged together). Defaults can be overridden via policies.yaml.
+    multi_source_title_similarity_threshold: float = 0.85
+    multi_source_conflict_lookback_days: int = 30
     max_conflict_checks_per_task: int = 5
     confidence_abstain_threshold: float = 0.55
     confidence_uncertain_threshold: float = 0.76

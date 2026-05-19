@@ -13,6 +13,15 @@ v1:
   confidence_abstain_threshold: 0.55
   confidence_uncertain_threshold: 0.76
   conflict_title_similarity_threshold: 0.7
+  # Phase 2.2: multi-source (cross-platform) conflict detection runs with a
+  # stricter title threshold than intra-batch because cross-document false
+  # positives are more confusing — the user sees two unrelated documents
+  # flagged together. Decoupled from the intra-batch threshold so each can
+  # be tuned independently after eval evidence accumulates.
+  multi_source_title_similarity_threshold: 0.85
+  # How far back to look for cross-source candidates. Only actionable items
+  # need re-checking — older completed/abandoned work would just be noise.
+  multi_source_conflict_lookback_days: 30
   max_conflict_checks_per_task: 5
   validate_evidence_in_source: true
   extraction_guidance: |

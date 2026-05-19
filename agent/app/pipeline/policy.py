@@ -17,6 +17,8 @@ class PipelinePolicy:
     confidence_abstain_threshold: float
     confidence_uncertain_threshold: float
     conflict_title_similarity_threshold: float
+    multi_source_title_similarity_threshold: float
+    multi_source_conflict_lookback_days: int
     max_conflict_checks_per_task: int
     extraction_guidance: str
     validate_evidence_in_source: bool
@@ -110,6 +112,14 @@ def _load_pipeline_policy(
         conflict_title_similarity_threshold=_coerce_float(
             data.get("conflict_title_similarity_threshold"),
             settings.conflict_title_similarity_threshold,
+        ),
+        multi_source_title_similarity_threshold=_coerce_float(
+            data.get("multi_source_title_similarity_threshold"),
+            settings.multi_source_title_similarity_threshold,
+        ),
+        multi_source_conflict_lookback_days=_coerce_int(
+            data.get("multi_source_conflict_lookback_days"),
+            settings.multi_source_conflict_lookback_days,
         ),
         max_conflict_checks_per_task=max_conflict_checks,
         extraction_guidance=extraction_guidance,

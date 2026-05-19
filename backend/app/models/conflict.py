@@ -17,5 +17,6 @@ class Conflict(Base):
     source_a_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_b_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     task_ids: Mapped[list[uuid.UUID] | None] = mapped_column(ARRAY(UUID(as_uuid=True)), nullable=True)
+    scope: Mapped[str | None] = mapped_column(Text, nullable=True)
     resolved: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
