@@ -52,7 +52,7 @@ export default function TasksPage() {
       const offset = (p - 1) * PAGE_SIZE;
       const [t, c] = await Promise.all([
         api.tasks.list({ status: status || undefined, source: source || undefined, sort, limit: PAGE_SIZE, offset }),
-        api.conflicts.list(false),
+        api.conflicts.list({ resolved: false }),
       ]);
       setTasks(t);
       // Backend returns up to PAGE_SIZE items; to know total we overfetch by 1
@@ -77,22 +77,24 @@ export default function TasksPage() {
   useEffect(() => { void load(page); }, [load, page]);
 
   async function confirmTask(id: string) {
+    setTasks((prev) => prev.map((t) => t.id === id ? { ...t, status: "confirmed" } : t));
     try {
       await api.tasks.update(id, { status: "confirmed" });
       toast.success("Confirmed");
-      void load(page);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Update failed");
+      void load(page);
     }
   }
 
   async function dismissTask(id: string) {
+    setTasks((prev) => prev.map((t) => t.id === id ? { ...t, status: "dismissed" } : t));
     try {
       await api.tasks.update(id, { status: "dismissed" });
       toast.success("Dismissed");
-      void load(page);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Update failed");
+      void load(page);
     }
   }
 
@@ -247,25 +249,33 @@ export default function TasksPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          type="button"
-                          onClick={() => void confirmTask(t.id)}
-                          disabled={t.status === "confirmed"}
-                          className="text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 disabled:opacity-30 transition-colors"
-                        >
-                          Confirm
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void dismissTask(t.id)}
-                          disabled={t.status === "dismissed"}
-                          className="text-xs font-medium text-[var(--muted)] hover:text-[var(--foreground)] disabled:opacity-30 transition-colors"
-                        >
-                          Dismiss
-                        </button>
-                      </div>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      {t.status === "pending" ? (
+                        <div className="flex gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={() => void confirmTask(t.id)}
+                            className="text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 transition-colors"
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void dismissTask(t.id)}
+                            className="text-xs font-medium text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      ) : (
+                        <span className={`text-[10px] font-semibold uppercase tracking-wider rounded-full px-2 py-0.5 ${
+                          t.status === "confirmed"
+                            ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"
+                            : "bg-gray-500/15 text-gray-500 dark:text-gray-400"
+                        }`}>
+                          {t.status}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}

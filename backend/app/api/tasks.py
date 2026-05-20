@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime, timezone
 from uuid import UUID
 
@@ -11,7 +12,23 @@ from app.db.session import get_db
 from app.models.source_document import SourceDocument
 from app.models.task import Task
 from app.models.user import User
-from app.schemas.task import TaskResponse, TaskUpdate
+from app.schemas.task import TaskResponse, TaskSourceResponse, TaskUpdate
+
+_MAX_EXCERPT_CHARS = 600
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_MULTI_WS_RE = re.compile(r"[ \t]{2,}")
+_CRLF_RE = re.compile(r"\r\n?")
+
+
+def _clean_excerpt(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    text = _HTML_TAG_RE.sub(" ", raw)
+    text = _CRLF_RE.sub("\n", text)
+    text = _MULTI_WS_RE.sub(" ", text).strip()
+    if len(text) > _MAX_EXCERPT_CHARS:
+        text = text[:_MAX_EXCERPT_CHARS].rstrip() + "…"
+    return text or None
 
 router = APIRouter()
 
@@ -82,6 +99,35 @@ async def list_tasks(
     return await _enrich_tasks(db, tasks)
 
 
+@router.get("/source-by-ref", response_model=TaskSourceResponse)
+async def get_source_by_ref(
+    ref: str = Query(..., min_length=1),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> TaskSourceResponse:
+    """Look up a source document by its pipeline source_ref string.
+
+    Used by the conflict UI when a conflict row has no task_ids — the
+    source_a_ref / source_b_ref values are matched directly against
+    source_documents.source_ref. Registered before ``/{task_id}`` so the
+    static path isn't captured by the UUID path parameter.
+    """
+    stmt = select(SourceDocument).where(
+        SourceDocument.source_ref == ref,
+        SourceDocument.user_id == current_user.id,
+    )
+    result = await db.execute(stmt)
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail={"code": "SOURCE_NOT_FOUND", "message": "Source document not found"})
+    return TaskSourceResponse(
+        source_type=doc.source_type,
+        source_ref=doc.source_ref,
+        excerpt=_clean_excerpt(doc.raw_text),
+        created_at=doc.created_at,
+    )
+
+
 @router.get("/{task_id}", response_model=TaskResponse)
 async def get_task(
     task_id: UUID,
@@ -132,6 +178,37 @@ async def delete_tasks_bulk(
     result = await db.execute(stmt)
     await db.commit()
     return {"deleted": result.rowcount}
+
+
+@router.get("/{task_id}/source", response_model=TaskSourceResponse)
+async def get_task_source(
+    task_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> TaskSourceResponse:
+    task_stmt = select(Task).where(Task.id == task_id, Task.user_id == current_user.id)
+    task_result = await db.execute(task_stmt)
+    task = task_result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail={"code": "TASK_NOT_FOUND", "message": "Task not found"})
+    if not task.source_doc_id:
+        raise HTTPException(status_code=404, detail={"code": "NO_SOURCE", "message": "Task has no source document"})
+
+    doc_stmt = select(SourceDocument).where(
+        SourceDocument.id == task.source_doc_id,
+        SourceDocument.user_id == current_user.id,
+    )
+    doc_result = await db.execute(doc_stmt)
+    doc = doc_result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail={"code": "SOURCE_NOT_FOUND", "message": "Source document not found"})
+
+    return TaskSourceResponse(
+        source_type=doc.source_type,
+        source_ref=doc.source_ref,
+        excerpt=_clean_excerpt(doc.raw_text),
+        created_at=doc.created_at,
+    )
 
 
 @router.delete("/{task_id}")

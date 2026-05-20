@@ -43,6 +43,13 @@ class TaskResponse(BaseModel):
     updated_at: datetime
 
 
+class TaskSourceResponse(BaseModel):
+    source_type: str
+    source_ref: str
+    excerpt: str | None
+    created_at: datetime
+
+
 class TaskUpdate(BaseModel):
     title: str | None = None
     description: str | None = None

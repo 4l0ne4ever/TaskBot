@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.api import tasks as tasks_api, conflicts as conflicts_api
 from app.api.deps import get_current_user
 from app.models.conflict import Conflict
+from app.models.source_document import SourceDocument
 from app.models.task import Task
 from app.models.user import User
 
@@ -41,15 +42,21 @@ def _make_task(tid: uuid.UUID = _TASK_ID, **overrides) -> Task:
     return Task(**defaults)
 
 
-def _make_conflict() -> Conflict:
+def _make_conflict(
+    *,
+    cid: uuid.UUID | None = None,
+    scope: str | None = None,
+    conflict_type: str = "deadline_conflict",
+) -> Conflict:
     return Conflict(
-        id=_CONFLICT_ID,
+        id=cid or _CONFLICT_ID,
         user_id=_USER_ID,
-        conflict_type="deadline_conflict",
+        conflict_type=conflict_type,
         description="Different deadlines",
         source_a_ref="a",
         source_b_ref="b",
         task_ids=[_TASK_ID],
+        scope=scope,
         resolved=False,
         created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
     )
@@ -76,26 +83,41 @@ class _FakeResult:
 
 
 class _FakeDB:
-    def __init__(self, tasks=None, conflicts=None):
+    def __init__(self, tasks=None, conflicts=None, source_docs=None):
         self._tasks = tasks or []
         self._conflicts = conflicts or []
+        self._source_docs = source_docs or []
         self.deleted = []
+        self.last_sql: str | None = None
+        self.committed = False
 
     async def execute(self, stmt):
-        compiled = str(stmt.compile(compile_kwargs={"literal_binds": False}))
-        if "conflicts" in compiled:
-            for c in self._conflicts:
-                return _FakeResult(rows=self._conflicts, one=c)
-            return _FakeResult(rows=self._conflicts)
-        for t in self._tasks:
-            return _FakeResult(rows=self._tasks, one=t)
-        return _FakeResult(rows=self._tasks)
+        # Render with literal_binds=True so tests can match scope strings
+        # ("multi_source", etc.) directly in the compiled SQL rather than
+        # having to recognise placeholder markers.
+        try:
+            compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+        except Exception:
+            compiled = str(stmt.compile(compile_kwargs={"literal_binds": False}))
+        self.last_sql = compiled
+        low = compiled.lower()
+        # Route by the table the statement targets. source_documents is checked
+        # first because a Task-with-join query can mention both, but the source
+        # endpoints under test issue simple single-table selects.
+        if "source_documents" in low and "from source_documents" in low:
+            rows = self._source_docs
+        elif "conflicts" in low:
+            rows = self._conflicts
+        else:
+            rows = self._tasks
+        one = rows[0] if rows else None
+        return _FakeResult(rows=rows, one=one)
 
     async def delete(self, obj):
         self.deleted.append(obj)
 
     async def commit(self):
-        pass
+        self.committed = True
 
     async def rollback(self):
         pass
@@ -183,6 +205,59 @@ def test_list_conflicts_unresolved() -> None:
     assert data[0]["conflict_type"] == "deadline_conflict"
 
 
+def test_list_conflicts_response_includes_scope_field() -> None:
+    """Phase 2.3 UI reads ``scope`` from this response shape — if it ever
+    falls off the Pydantic model we'd silently lose badge rendering."""
+    user = _make_user()
+    c1 = _make_conflict(scope="thread_update")
+    db = _FakeDB(conflicts=[c1])
+    client = TestClient(_build_app(db, user))
+    r = client.get("/tasks/conflicts")
+    assert r.status_code == 200
+    data = r.json()
+    assert data[0]["scope"] == "thread_update"
+
+
+def test_list_conflicts_scope_filter_param_accepted() -> None:
+    """``?scope=...`` is plumbed through to the WHERE clause; the mock DB
+    returns whatever it has, but the request must not 422 and the SQL
+    fragment must include the ``conflicts.scope`` predicate."""
+    user = _make_user()
+    c1 = _make_conflict(scope="multi_source")
+    db = _FakeDB(conflicts=[c1])
+    client = TestClient(_build_app(db, user))
+    r = client.get("/tasks/conflicts?scope=multi_source")
+    assert r.status_code == 200, r.text
+    # The fake DB captured the compiled SQL via _FakeDB.execute; verify the
+    # scope filter actually reached the query.
+    assert db.last_sql is not None and "conflicts.scope" in db.last_sql
+
+
+def test_list_conflicts_priority_sort_param_emits_case_order() -> None:
+    """``?sort=priority`` must compile to a CASE-based ORDER BY so the
+    hierarchy (multi_source > thread_update > inter_doc > intra_batch)
+    is enforced at the DB layer rather than in Python."""
+    user = _make_user()
+    c1 = _make_conflict(scope="multi_source")
+    db = _FakeDB(conflicts=[c1])
+    client = TestClient(_build_app(db, user))
+    r = client.get("/tasks/conflicts?sort=priority")
+    assert r.status_code == 200, r.text
+    assert db.last_sql is not None
+    sql = db.last_sql.lower()
+    # CASE expression rendered with our 4 scope branches.
+    assert "case" in sql
+    assert "multi_source" in sql or "%(param_1)s" in sql  # bound-param fallback
+
+
+def test_list_conflicts_invalid_sort_rejected() -> None:
+    user = _make_user()
+    db = _FakeDB(conflicts=[])
+    client = TestClient(_build_app(db, user))
+    r = client.get("/tasks/conflicts?sort=garbage")
+    assert r.status_code == 422
+
+
 def test_resolve_conflict() -> None:
     user = _make_user()
     c1 = _make_conflict()
@@ -191,3 +266,158 @@ def test_resolve_conflict() -> None:
     r = client.patch(f"/tasks/conflicts/{_CONFLICT_ID}", json={"resolution": "accept_a"})
     assert r.status_code == 200
     assert r.json()["resolved"] is True
+
+
+# ── Phase 2.3 Commit 6: thread_update field merge ──────────────────────────────
+
+
+def _make_source_doc(
+    *, doc_id: uuid.UUID, source_type: str = "gmail", source_ref: str = "msg-abc", raw_text: str | None = "Body text"
+) -> SourceDocument:
+    return SourceDocument(
+        id=doc_id,
+        user_id=_USER_ID,
+        source_type=source_type,
+        source_ref=source_ref,
+        content_hash="hash",
+        raw_text=raw_text,
+        created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+    )
+
+
+def _merge_conflict_with_tasks(scope: str = "thread_update", task_ids=None) -> Conflict:
+    return Conflict(
+        id=_CONFLICT_ID,
+        user_id=_USER_ID,
+        conflict_type="deadline_conflict",
+        description="Thread updated the deadline",
+        source_a_ref="a",
+        source_b_ref="b",
+        task_ids=task_ids if task_ids is not None else [_TASK_2_ID, _TASK_ID],
+        scope=scope,
+        resolved=False,
+        created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+    )
+
+
+def test_merge_applies_fields_dismisses_source_and_skips_calendar() -> None:
+    """Older task survives with the newer task's chosen fields; newer task is
+    dismissed; no calendar event ⇒ calendar_sync skipped, never enqueued."""
+    user = _make_user()
+    old = _make_task(
+        tid=_TASK_ID,
+        created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+        deadline=date(2026, 5, 1),
+        assignee="Alice",
+        calendar_event_id=None,
+    )
+    new = _make_task(
+        tid=_TASK_2_ID,
+        created_at=datetime(2026, 4, 10, tzinfo=timezone.utc),
+        deadline=date(2026, 6, 1),
+        assignee="Bob",
+    )
+    conflict = _merge_conflict_with_tasks(task_ids=[_TASK_2_ID, _TASK_ID])
+    db = _FakeDB(tasks=[old, new], conflicts=[conflict])
+    client = TestClient(_build_app(db, user))
+
+    r = client.post(f"/tasks/conflicts/{_CONFLICT_ID}/merge", json={"fields": ["deadline", "assignee"]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["merged_task_id"] == str(_TASK_ID)  # older survives
+    assert body["dismissed_task_id"] == str(_TASK_2_ID)
+    assert body["calendar_sync"]["status"] == "skipped"
+    assert body["calendar_sync"]["reason"] == "no_calendar_event"
+    # ORM objects were mutated in place
+    assert old.deadline == date(2026, 6, 1)
+    assert old.assignee == "Bob"
+    assert old.previous_revision is not None and old.previous_revision["deadline"] == "2026-05-01"
+    assert new.status == "dismissed"
+    assert conflict.resolved is True
+
+
+def test_merge_rejects_non_thread_update_scope() -> None:
+    user = _make_user()
+    old = _make_task(tid=_TASK_ID, created_at=datetime(2026, 4, 1, tzinfo=timezone.utc))
+    new = _make_task(tid=_TASK_2_ID, created_at=datetime(2026, 4, 10, tzinfo=timezone.utc))
+    conflict = _merge_conflict_with_tasks(scope="multi_source")
+    db = _FakeDB(tasks=[old, new], conflicts=[conflict])
+    client = TestClient(_build_app(db, user))
+    r = client.post(f"/tasks/conflicts/{_CONFLICT_ID}/merge", json={"fields": ["deadline"]})
+    assert r.status_code == 400
+    assert r.json()["detail"]["code"] == "MERGE_SCOPE_UNSUPPORTED"
+
+
+def test_merge_rejects_missing_task_ids() -> None:
+    user = _make_user()
+    conflict = _merge_conflict_with_tasks(task_ids=[_TASK_ID])  # only one task
+    db = _FakeDB(tasks=[], conflicts=[conflict])
+    client = TestClient(_build_app(db, user))
+    r = client.post(f"/tasks/conflicts/{_CONFLICT_ID}/merge", json={"fields": ["deadline"]})
+    assert r.status_code == 400
+    assert r.json()["detail"]["code"] == "MERGE_MISSING_TASKS"
+
+
+def test_merge_rejects_unmergeable_field() -> None:
+    user = _make_user()
+    conflict = _merge_conflict_with_tasks()
+    db = _FakeDB(tasks=[], conflicts=[conflict])
+    client = TestClient(_build_app(db, user))
+    r = client.post(f"/tasks/conflicts/{_CONFLICT_ID}/merge", json={"fields": ["status"]})
+    assert r.status_code == 422  # schema validation rejects non-allowlisted field
+
+
+def test_merge_with_calendar_event_but_no_token_returns_skipped() -> None:
+    """Surviving task has a calendar event + deadline changes, but the user has
+    no Google token ⇒ merge still succeeds, calendar_sync skipped/no_token,
+    nothing enqueued (no Redis touched)."""
+    user = _make_user()  # oauth_token defaults to None
+    old = _make_task(
+        tid=_TASK_ID,
+        created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+        deadline=date(2026, 5, 1),
+        calendar_event_id="evt-existing",
+    )
+    new = _make_task(
+        tid=_TASK_2_ID,
+        created_at=datetime(2026, 4, 10, tzinfo=timezone.utc),
+        deadline=date(2026, 6, 1),
+    )
+    conflict = _merge_conflict_with_tasks(task_ids=[_TASK_2_ID, _TASK_ID])
+    db = _FakeDB(tasks=[old, new], conflicts=[conflict])
+    client = TestClient(_build_app(db, user))
+    r = client.post(f"/tasks/conflicts/{_CONFLICT_ID}/merge", json={"fields": ["deadline"]})
+    assert r.status_code == 200, r.text
+    cal = r.json()["calendar_sync"]
+    assert cal["status"] == "skipped"
+    assert cal["reason"] == "no_token"
+    assert old.deadline == date(2026, 6, 1)  # merge applied regardless
+
+
+# ── Phase 2.3 Commit 5 carry-over: source endpoints ────────────────────────────
+
+
+def test_get_task_source_returns_excerpt() -> None:
+    user = _make_user()
+    doc_id = uuid.uuid4()
+    task = _make_task(source_doc_id=doc_id)
+    doc = _make_source_doc(doc_id=doc_id, raw_text="<b>Hello</b>  world")
+    db = _FakeDB(tasks=[task], source_docs=[doc])
+    client = TestClient(_build_app(db, user))
+    r = client.get(f"/tasks/{_TASK_ID}/source")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["source_type"] == "gmail"
+    assert body["source_ref"] == "msg-abc"
+    assert body["excerpt"] == "Hello world"  # HTML stripped, whitespace collapsed
+
+
+def test_get_source_by_ref_returns_excerpt() -> None:
+    user = _make_user()
+    doc = _make_source_doc(doc_id=uuid.uuid4(), source_ref="19d6ca4d63fa4be4", raw_text="Plain body")
+    db = _FakeDB(source_docs=[doc])
+    client = TestClient(_build_app(db, user))
+    r = client.get("/tasks/source-by-ref?ref=19d6ca4d63fa4be4")
+    assert r.status_code == 200, r.text
+    assert r.json()["source_ref"] == "19d6ca4d63fa4be4"
+    assert r.json()["excerpt"] == "Plain body"

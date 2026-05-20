@@ -1,6 +1,19 @@
 import { API_BASE_URL } from "./config";
 import { getAuthToken } from "./auth";
-import type { CalendarEvent, Conflict, PipelineRunRow, SettingsPayload, SyncStateRow, Task } from "./types";
+import type {
+  CalendarEvent,
+  Conflict,
+  ConflictMergeResult,
+  ConflictScope,
+  MergeableField,
+  PipelineRunRow,
+  SettingsPayload,
+  SyncStateRow,
+  Task,
+  TaskSource,
+} from "./types";
+
+export type ConflictSort = "priority" | "created_at";
 
 async function parseError(res: Response): Promise<string> {
   const body = await res.json().catch(() => null);
@@ -83,23 +96,38 @@ export const api = {
     ) =>
       apiFetch<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     delete: (id: string) => apiFetch<{ deleted: string; calendar_event_id: string }>(`/tasks/${id}`, { method: "DELETE" }),
+    source: (id: string) => apiFetch<TaskSource>(`/tasks/${id}/source`),
+    sourceByRef: (ref: string) => apiFetch<TaskSource>(`/tasks/source-by-ref?ref=${encodeURIComponent(ref)}`),
     deleteAll: (status?: string) => {
       const q = status ? `?status=${status}` : "";
       return apiFetch<{ deleted: number }>(`/tasks${q}`, { method: "DELETE" });
     },
   },
   conflicts: {
-    list: (resolved?: boolean, limit = 50, offset = 0) => {
+    list: (params: {
+      resolved?: boolean;
+      scope?: ConflictScope;
+      sort?: ConflictSort;
+      limit?: number;
+      offset?: number;
+    } = {}) => {
       const q = new URLSearchParams();
-      if (resolved !== undefined) q.set("resolved", String(resolved));
-      q.set("limit", String(limit));
-      q.set("offset", String(offset));
+      if (params.resolved !== undefined) q.set("resolved", String(params.resolved));
+      if (params.scope) q.set("scope", params.scope);
+      if (params.sort) q.set("sort", params.sort);
+      q.set("limit", String(params.limit ?? 50));
+      q.set("offset", String(params.offset ?? 0));
       return apiFetch<Conflict[]>(`/tasks/conflicts?${q.toString()}`);
     },
     resolve: (id: string, resolution: "accept_a" | "accept_b" | "dismiss") =>
       apiFetch<Conflict>(`/tasks/conflicts/${id}`, {
         method: "PATCH",
         body: JSON.stringify({ resolution }),
+      }),
+    merge: (id: string, fields: MergeableField[]) =>
+      apiFetch<ConflictMergeResult>(`/tasks/conflicts/${id}/merge`, {
+        method: "POST",
+        body: JSON.stringify({ fields }),
       }),
     dismissAll: () => apiFetch<{ dismissed: number }>("/tasks/conflicts/dismiss-all", { method: "POST" }),
   },

@@ -35,6 +35,12 @@ export interface Task {
   updated_at: string;
 }
 
+export type ConflictScope =
+  | "multi_source"
+  | "thread_update"
+  | "inter_doc"
+  | "intra_batch";
+
 export interface Conflict {
   id: string;
   conflict_type: string;
@@ -42,8 +48,30 @@ export interface Conflict {
   source_a_ref: string | null;
   source_b_ref: string | null;
   task_ids: string[] | null;
+  scope: ConflictScope | null;
   resolved: boolean;
   created_at: string;
+}
+
+export interface TaskSource {
+  source_type: string;
+  source_ref: string;
+  excerpt: string | null;
+  created_at: string;
+}
+
+export type MergeableField = "title" | "description" | "assignee" | "deadline" | "priority";
+
+export interface CalendarSyncInfo {
+  status: "skipped" | "queued" | "failed";
+  reason: string | null;
+  message: string;
+}
+
+export interface ConflictMergeResult {
+  merged_task_id: string;
+  dismissed_task_id: string;
+  calendar_sync: CalendarSyncInfo;
 }
 
 export interface SyncStateRow {
