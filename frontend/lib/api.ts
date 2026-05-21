@@ -6,8 +6,11 @@ import type {
   ConflictMergeResult,
   ConflictScope,
   MergeableField,
+  ObservabilitySummary,
   PipelineRunRow,
+  QualityMetrics,
   SettingsPayload,
+  SyncHealth,
   SyncStateRow,
   Task,
   TaskSource,
@@ -46,6 +49,20 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     return undefined as T;
   }
 
+  return res.json() as Promise<T>;
+}
+
+// Same-origin fetch for the Next.js observability proxy (app/api/observability).
+// The proxy injects the server-only internal token; here we only forward the
+// user's JWT. Path is relative (same origin), not the backend base URL.
+async function proxyFetch<T>(path: string): Promise<T> {
+  const token = getAuthToken();
+  const res = await fetch(path, {
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+  });
+  if (!res.ok) {
+    throw new Error(await parseError(res));
+  }
   return res.json() as Promise<T>;
 }
 
@@ -172,5 +189,13 @@ export const api = {
     },
     status: (uploadId: string) =>
       apiFetch<{ upload_id: string; status: string }>(`/upload/${uploadId}/status`),
+  },
+  observability: {
+    quality: (window?: string) =>
+      proxyFetch<QualityMetrics>(
+        `/api/observability/quality${window ? `?window=${encodeURIComponent(window)}` : ""}`,
+      ),
+    syncHealth: () => proxyFetch<SyncHealth>("/api/observability/sync-health"),
+    summary: () => proxyFetch<ObservabilitySummary>("/api/observability/summary"),
   },
 };

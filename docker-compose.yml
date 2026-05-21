@@ -153,6 +153,11 @@ services:
       - .env
     environment:
       WATCHPACK_POLLING: "true"
+      # Server-side base URL for the Next.js observability proxy. Inside Compose
+      # the API is reached by service name; the .env default (127.0.0.1) would
+      # resolve to the frontend container itself. NEXT_PUBLIC_API_URL stays the
+      # host-facing URL for the browser.
+      BACKEND_API_BASE_URL: http://backend:8000
     command: sh -c "npm install && npx next dev -H 0.0.0.0 -p 3000"
     volumes:
       - ./frontend:/app

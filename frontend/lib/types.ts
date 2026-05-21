@@ -114,3 +114,53 @@ export interface CalendarEvent {
   created_at: string;
   updated_at: string;
 }
+
+// --- Observability / Admin dashboard ---
+
+export interface QualityMetrics {
+  window: string | null; // null = lifetime, e.g. "30d" = rolling window
+  total_tasks: number;
+  by_status: Record<string, number>;
+  by_confirmed_by: { system: number; user: number; none: number };
+  crosstab: { status: string; confirmed_by: string | null; count: number }[];
+  auto_confirm: {
+    system_confirmed: number;
+    currently_confirmed_auto: number;
+    user_confirmed: number;
+    superseded: number;
+    need_review: number;
+    auto_confirm_rate: number;
+  };
+  calibration: { ece: number; source: string; note: string };
+}
+
+export interface SyncHealthSource {
+  source_type: string;
+  status: string;
+  last_sync_at: string | null;
+  staleness_minutes: number | null;
+  interval_minutes: number;
+  is_stale: boolean;
+  has_error: boolean;
+  error_message: string | null;
+}
+
+export interface SyncHealth {
+  overall: "healthy" | "stale" | "error";
+  sources: SyncHealthSource[];
+}
+
+export interface ObservabilitySummary {
+  llm: {
+    sample_size: number;
+    error_rate: number;
+    p50_ms: number;
+    p95_ms: number;
+    p99_ms: number;
+    total_tokens: number;
+    estimated_cost_total: number;
+  };
+  pipeline: { window_days: number; failed_runs: number; total_runs: number; error_rate: number };
+  quality: { missing_deadline_tasks: number; total_tasks: number; missing_deadline_rate: number };
+  targets: { p50_lt_ms: number; p95_lt_ms: number; p99_lt_ms: number };
+}
