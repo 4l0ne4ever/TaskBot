@@ -58,23 +58,33 @@ a production SLA.
 
 ## Why 90.9% is the headline, not the lifetime aggregate
 
-The live `/observability/quality` endpoint reports a **lifetime** auto-confirm rate
-of **24.8%** (30/121) over all of this user's tasks. That number is diluted by
-**pre-feature** tasks: auto-confirm went live 2026-05-21, but 71 tasks were created
-2026-05-11..05-20 and can never carry `confirmed_by='system'`. They are not
-eligible, so including them understates the mechanism.
+The live `/observability/quality` endpoint is **per-user** (filters
+`current_user.id`). For the demo user it reports a **lifetime** auto-confirm rate
+of **75%** (30/40): the 33 synthetic tasks plus 7 pre-feature tasks created
+2026-05-18..20 that can never carry `confirmed_by='system'` (the feature went live
+2026-05-21). Those 7 dilute the lifetime rate but are not eligible, so including
+them understates the mechanism.
 
-Windowing does **not** fix this on the current dataset: all data is <30 days old, so
-`?window=30d` returns everything (still 24.8%). The feature boundary is *today*, not
-30 days ago. The `window` param is retained as correct infrastructure — it will
-separate the populations once pre-feature tasks age past the window — but it is not
-the lever for today's measurement.
+> **Correction (measurement integrity):** an earlier draft cited a lifetime rate of
+> **24.8% (30/121)**. That figure came from an *unfiltered, cross-user* SQL query.
+> The dev database holds 77 users — 76 are single-task test fixtures (all `pending`,
+> `confirmed_by NULL`) left by integration tests. The `/quality` endpoint never
+> returns 24.8%; per the demo user the lifetime rate is 75%. The 24.8% number is
+> retracted.
+
+Windowing does **not** change this on the current dataset: all of the demo user's
+data is <30 days old, so `?window=30d` returns everything (still 75%); `?window=1d`
+gives 83.3% (30/36). The feature boundary is *today*, not 30 days ago. The `window`
+param is retained as correct infrastructure — it will separate the populations once
+pre-feature tasks age past the window — but it is not the lever for today's
+measurement.
 
 The clean, defensible measurement is therefore the **controlled synthetic batch**
-isolated by `source_ref LIKE 'synth-%'`: **90.9%** on representative enterprise
-task-bearing emails. The endpoint deliberately does **not** filter by `synth-`
-(a test artifact is not a production metric dimension); that isolation lives here,
-in the eval artifact.
+isolated by `source_ref LIKE 'synth-%'`: **90.9%** (30/33) on representative
+enterprise task-bearing emails. The endpoint deliberately does **not** filter by
+`synth-` (a test artifact is not a production metric dimension); that isolation
+lives here, in the eval artifact.
 
-**Thesis framing (decided):** quote 90.9% as the controlled result; show lifetime
-24.8% in the dashboard for transparency, explained by pre-feature/FYI dilution.
+**Thesis framing (decided):** quote 90.9% as the controlled result; the dashboard
+shows the per-user lifetime rate (currently 75%) for transparency, explained by
+pre-feature dilution.
