@@ -240,7 +240,27 @@ def test_quality_funnel_and_auto_confirm_rate(monkeypatch) -> None:
     assert ac["superseded"] == 2                 # pending + non-null confirmed_by
     assert ac["need_review"] == 5                # pending + null confirmed_by
     assert ac["auto_confirm_rate"] == round(32 / 41, 4)
-    assert data["calibration"]["ece_offline_baseline"] == 0.108
+    assert data["window"] is None  # lifetime by default
+    assert data["calibration"]["ece"] == 0.108
+    assert data["calibration"]["source"] == "offline_eval_250_sample"
+
+
+def test_quality_accepts_window_param(monkeypatch) -> None:
+    fake_db = _FakeDB(quality_rows=[("confirmed", "system", 9), ("pending", None, 1)])
+    app = _build_app(fake_db, _FakeRedis(), monkeypatch)
+    client = TestClient(app)
+    r = client.get("/observability/quality?window=30d", headers={"x-internal-token": "secret-token"})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["window"] == "30d"
+    assert data["auto_confirm"]["auto_confirm_rate"] == round(9 / 10, 4)
+
+
+def test_quality_rejects_malformed_window(monkeypatch) -> None:
+    app = _build_app(_FakeDB(quality_rows=[]), _FakeRedis(), monkeypatch)
+    client = TestClient(app)
+    r = client.get("/observability/quality?window=30days", headers={"x-internal-token": "secret-token"})
+    assert r.status_code == 422, r.text
 
 
 def test_quality_empty_returns_zero_rate(monkeypatch) -> None:

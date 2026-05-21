@@ -246,6 +246,11 @@ async def observability_runs(
 
 @router.get("/quality")
 async def observability_quality(
+    window: str | None = Query(
+        None,
+        pattern=r"^\d+d$",
+        description="Rolling window like '30d'. Omit for lifetime aggregate.",
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     _: None = Depends(_guard_internal_observability),
@@ -260,12 +265,22 @@ async def observability_quality(
     NULL = never confirmed. A supersede resets ``status`` to ``pending`` but
     preserves ``confirmed_by``, so ``pending`` + non-null ``confirmed_by``
     marks a task whose prior confirmation was invalidated by a newer message.
+
+    ``window`` (e.g. ``30d``) restricts to tasks created in that rolling
+    window. This matters for the auto-confirm rate: the lifetime aggregate is
+    diluted by historical content created before auto-confirm existed (those
+    tasks can never have ``confirmed_by='system'``), so a windowed rate is the
+    honest measure of recent system behaviour. The default is lifetime.
     """
+    window_days: int | None = int(window[:-1]) if window else None
     stmt = (
         select(Task.status, Task.confirmed_by, func.count())
         .where(Task.user_id == current_user.id)
         .group_by(Task.status, Task.confirmed_by)
     )
+    if window_days is not None:
+        since = datetime.now(timezone.utc) - timedelta(days=window_days)
+        stmt = stmt.where(Task.created_at >= since)
     grouped = (await db.execute(stmt)).all()
 
     crosstab: list[dict] = []
@@ -296,6 +311,7 @@ async def observability_quality(
                 superseded += cnt
 
     return {
+        "window": window,  # null = lifetime; e.g. "30d" = rolling 30-day
         "total_tasks": total,
         "by_status": by_status,
         "by_confirmed_by": by_confirmed_by,
@@ -311,10 +327,11 @@ async def observability_quality(
         "calibration": {
             # ECE needs ground-truth labels (predicted confidence vs actual
             # correctness) and is therefore an offline-eval metric, not a live
-            # one. Surfaced here as a reference to the eval baseline so the
-            # dashboard does not fabricate a runtime number.
-            "ece_offline_baseline": 0.108,
-            "note": "ECE is computed offline against labelled eval data, not at runtime.",
+            # one. Surfaced as a reference to the eval baseline so the dashboard
+            # does not fabricate a runtime number the committee could misread.
+            "ece": 0.108,
+            "source": "offline_eval_250_sample",
+            "note": "ECE requires labeled data; computed offline, not runtime.",
         },
     }
 

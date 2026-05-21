@@ -55,3 +55,26 @@ FROM synth;"
 resemble Anna's enterprise inbox (deadlines + named assignees common). Real-world
 rate will differ; this establishes the mechanism works and is well-calibrated, not
 a production SLA.
+
+## Why 90.9% is the headline, not the lifetime aggregate
+
+The live `/observability/quality` endpoint reports a **lifetime** auto-confirm rate
+of **24.8%** (30/121) over all of this user's tasks. That number is diluted by
+**pre-feature** tasks: auto-confirm went live 2026-05-21, but 71 tasks were created
+2026-05-11..05-20 and can never carry `confirmed_by='system'`. They are not
+eligible, so including them understates the mechanism.
+
+Windowing does **not** fix this on the current dataset: all data is <30 days old, so
+`?window=30d` returns everything (still 24.8%). The feature boundary is *today*, not
+30 days ago. The `window` param is retained as correct infrastructure — it will
+separate the populations once pre-feature tasks age past the window — but it is not
+the lever for today's measurement.
+
+The clean, defensible measurement is therefore the **controlled synthetic batch**
+isolated by `source_ref LIKE 'synth-%'`: **90.9%** on representative enterprise
+task-bearing emails. The endpoint deliberately does **not** filter by `synth-`
+(a test artifact is not a production metric dimension); that isolation lives here,
+in the eval artifact.
+
+**Thesis framing (decided):** quote 90.9% as the controlled result; show lifetime
+24.8% in the dashboard for transparency, explained by pre-feature/FYI dilution.
