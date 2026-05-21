@@ -1,5 +1,7 @@
+import json
 import uuid
 from datetime import date, datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -159,6 +161,18 @@ def test_get_task_by_id() -> None:
     r = client.get(f"/tasks/{_TASK_ID}")
     assert r.status_code == 200
     assert r.json()["title"] == "Submit report"
+
+
+def test_get_task_includes_evidence_quote() -> None:
+    """Phase 7.1: the evidence highlight UI reads evidence_quote from the task
+    response — if it falls off the model the highlight silently disappears."""
+    user = _make_user()
+    t1 = _make_task(evidence_quote="trước thứ Sáu tuần này")
+    db = _FakeDB(tasks=[t1])
+    client = TestClient(_build_app(db, user))
+    r = client.get(f"/tasks/{_TASK_ID}")
+    assert r.status_code == 200
+    assert r.json()["evidence_quote"] == "trước thứ Sáu tuần này"
 
 
 def test_get_task_not_found() -> None:
@@ -421,3 +435,165 @@ def test_get_source_by_ref_returns_excerpt() -> None:
     assert r.status_code == 200, r.text
     assert r.json()["source_ref"] == "19d6ca4d63fa4be4"
     assert r.json()["excerpt"] == "Plain body"
+
+
+# ── Phase 7.3 Confirm Gates ────────────────────────────────────────────────────
+
+
+def test_patch_confirm_with_deadline_enqueues_calendar() -> None:
+    """Confirming a task that has a deadline must enqueue a calendar_resync job
+    and commit before enqueuing so the agent reads the confirmed state."""
+    user = _make_user()
+    t1 = _make_task(deadline=date(2026, 6, 1))
+    db = _FakeDB(tasks=[t1])
+
+    mock_redis = AsyncMock()
+    mock_redis.rpush = AsyncMock()
+
+    async def _fake_build(u):
+        return "access-token-123", MagicMock()
+
+    with (
+        patch("app.api.tasks.get_redis", AsyncMock(return_value=mock_redis)),
+        patch("app.api.conflicts._build_calendar_resync_payload", _fake_build),
+    ):
+        client = TestClient(_build_app(db, user))
+        r = client.patch(f"/tasks/{_TASK_ID}", json={"status": "confirmed"})
+
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "confirmed"
+    assert db.committed is True
+    mock_redis.rpush.assert_awaited_once()
+    payload = json.loads(mock_redis.rpush.call_args[0][1])
+    assert payload["source_type"] == "calendar_resync"
+    assert payload["triggered_by"] == "task_confirm"
+    assert payload["task_id"] == str(_TASK_ID)
+
+
+def test_patch_confirm_no_deadline_skips_calendar() -> None:
+    """Confirming a task with no deadline must not touch Redis — calendar events
+    require a deadline to be meaningful."""
+    user = _make_user()
+    t1 = _make_task(deadline=None)
+    db = _FakeDB(tasks=[t1])
+
+    mock_redis = AsyncMock()
+
+    with patch("app.api.tasks.get_redis", mock_redis):
+        client = TestClient(_build_app(db, user))
+        r = client.patch(f"/tasks/{_TASK_ID}", json={"status": "confirmed"})
+
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "confirmed"
+    mock_redis.assert_not_awaited()
+
+
+def test_patch_dismissed_skips_calendar() -> None:
+    """Dismissing a task must never trigger a calendar job."""
+    user = _make_user()
+    t1 = _make_task(deadline=date(2026, 6, 1))
+    db = _FakeDB(tasks=[t1])
+
+    mock_redis = AsyncMock()
+
+    with patch("app.api.tasks.get_redis", mock_redis):
+        client = TestClient(_build_app(db, user))
+        r = client.patch(f"/tasks/{_TASK_ID}", json={"status": "dismissed"})
+
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "dismissed"
+    mock_redis.assert_not_awaited()
+
+
+def test_patch_confirm_no_google_token_still_succeeds() -> None:
+    """When the user has no Google token the update still succeeds — the
+    calendar job is simply not enqueued and no error is raised."""
+    user = _make_user()  # oauth_token=None by default
+    t1 = _make_task(deadline=date(2026, 6, 1))
+    db = _FakeDB(tasks=[t1])
+
+    mock_redis = AsyncMock()
+
+    async def _fake_build_no_token(u):
+        return None, MagicMock()  # no token
+
+    with (
+        patch("app.api.tasks.get_redis", AsyncMock(return_value=mock_redis)),
+        patch("app.api.conflicts._build_calendar_resync_payload", _fake_build_no_token),
+    ):
+        client = TestClient(_build_app(db, user))
+        r = client.patch(f"/tasks/{_TASK_ID}", json={"status": "confirmed"})
+
+    assert r.status_code == 200, r.text
+    mock_redis.rpush.assert_not_awaited()
+
+
+# ── Phase 7.2 confirmed_by provenance ─────────────────────────────────────────
+
+
+def test_patch_confirm_sets_confirmed_by_user() -> None:
+    """Explicit PATCH status=confirmed must set confirmed_by='user' on the task."""
+    user = _make_user()
+    t1 = _make_task()
+    db = _FakeDB(tasks=[t1])
+    client = TestClient(_build_app(db, user))
+    r = client.patch(f"/tasks/{_TASK_ID}", json={"status": "confirmed"})
+    assert r.status_code == 200, r.text
+    assert t1.confirmed_by == "user"
+    assert r.json()["confirmed_by"] == "user"
+
+
+def test_patch_revert_to_pending_clears_confirmed_by() -> None:
+    """Reverting to pending must clear confirmed_by=NULL so the 'Updated' badge
+    doesn't appear for a task the user intentionally sent back to review."""
+    user = _make_user()
+    t1 = _make_task(status="confirmed", confirmed_by="system")
+    db = _FakeDB(tasks=[t1])
+    client = TestClient(_build_app(db, user))
+    r = client.patch(f"/tasks/{_TASK_ID}", json={"status": "pending"})
+    assert r.status_code == 200, r.text
+    assert t1.confirmed_by is None
+    assert r.json()["confirmed_by"] is None
+
+
+def test_patch_dismiss_preserves_confirmed_by() -> None:
+    """Dismissing an auto-confirmed task does not change confirmed_by — the
+    provenance is still useful for audit even when the task is dismissed."""
+    user = _make_user()
+    t1 = _make_task(status="confirmed", confirmed_by="system")
+    db = _FakeDB(tasks=[t1])
+    client = TestClient(_build_app(db, user))
+    r = client.patch(f"/tasks/{_TASK_ID}", json={"status": "dismissed"})
+    assert r.status_code == 200, r.text
+    assert t1.confirmed_by == "system"
+
+
+def test_task_response_includes_confirmed_by() -> None:
+    """confirmed_by must flow through TaskResponse so the frontend can show the
+    'Auto' chip and 'Revert' button."""
+    user = _make_user()
+    t1 = _make_task(status="confirmed", confirmed_by="system")
+    db = _FakeDB(tasks=[t1])
+    client = TestClient(_build_app(db, user))
+    r = client.get(f"/tasks/{_TASK_ID}")
+    assert r.status_code == 200
+    assert r.json()["confirmed_by"] == "system"
+
+
+def test_patch_confirm_after_supersede_overwrites_confirmed_by() -> None:
+    """Edge case: auto-confirm → pipeline supersede → Anna confirms the update.
+
+    After supersede: status=pending, confirmed_by=system ('Updated' badge).
+    Anna confirms → status=confirmed, confirmed_by='user' (badge gone, task owned).
+    The PATCH status=confirmed path must overwrite confirmed_by regardless of
+    the prior value so the provenance reflects the current human decision.
+    """
+    user = _make_user()
+    # Post-supersede state: was auto-confirmed, pipeline reset to pending
+    t1 = _make_task(status="pending", confirmed_by="system")
+    db = _FakeDB(tasks=[t1])
+    client = TestClient(_build_app(db, user))
+    r = client.patch(f"/tasks/{_TASK_ID}", json={"status": "confirmed"})
+    assert r.status_code == 200, r.text
+    assert t1.confirmed_by == "user"
+    assert r.json()["confirmed_by"] == "user"

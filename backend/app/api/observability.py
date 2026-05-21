@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.db.redis import get_redis
 from app.db.session import get_db
 from app.models.pipeline_run import PipelineRun
+from app.models.sync_state import SyncState
 from app.models.task import Task
 from app.models.user import User
 
@@ -241,3 +242,136 @@ async def observability_runs(
         "target_pass": {"p50": p50 < 3000, "p95": p95 < 10000, "p99": p99 < 20000},
     }
     return {"summary": summary, "runs": rows}
+
+
+@router.get("/quality")
+async def observability_quality(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(_guard_internal_observability),
+) -> dict:
+    """Section D — task-lifecycle funnel and auto-confirm provenance.
+
+    Driven by a single grouped query over (status, confirmed_by). Both are
+    plain TEXT columns, so this avoids the JSONB-null trap that bites
+    ``uncertainty IS NULL`` (the column stores a JSON ``null`` literal, which
+    is *not* SQL NULL). Auto-confirm provenance lives in ``confirmed_by``:
+    ``system`` = auto-confirmed at extraction, ``user`` = manually confirmed,
+    NULL = never confirmed. A supersede resets ``status`` to ``pending`` but
+    preserves ``confirmed_by``, so ``pending`` + non-null ``confirmed_by``
+    marks a task whose prior confirmation was invalidated by a newer message.
+    """
+    stmt = (
+        select(Task.status, Task.confirmed_by, func.count())
+        .where(Task.user_id == current_user.id)
+        .group_by(Task.status, Task.confirmed_by)
+    )
+    grouped = (await db.execute(stmt)).all()
+
+    crosstab: list[dict] = []
+    by_status: dict[str, int] = {}
+    by_confirmed_by: dict[str, int] = {"system": 0, "user": 0, "none": 0}
+    total = 0
+    system_confirmed = 0          # confirmed_by == system, any status
+    currently_confirmed_auto = 0  # status == confirmed AND confirmed_by == system
+    superseded = 0                # status == pending AND confirmed_by IS NOT NULL
+    need_review = 0               # status == pending AND confirmed_by IS NULL
+
+    for status, confirmed_by, count in grouped:
+        cnt = int(count or 0)
+        total += cnt
+        by_status[status] = by_status.get(status, 0) + cnt
+        key = confirmed_by if confirmed_by in ("system", "user") else "none"
+        by_confirmed_by[key] += cnt
+        crosstab.append({"status": status, "confirmed_by": confirmed_by, "count": cnt})
+
+        if confirmed_by == "system":
+            system_confirmed += cnt
+            if status == "confirmed":
+                currently_confirmed_auto += cnt
+        if status == "pending":
+            if confirmed_by is None:
+                need_review += cnt
+            else:
+                superseded += cnt
+
+    return {
+        "total_tasks": total,
+        "by_status": by_status,
+        "by_confirmed_by": by_confirmed_by,
+        "crosstab": crosstab,
+        "auto_confirm": {
+            "system_confirmed": system_confirmed,
+            "currently_confirmed_auto": currently_confirmed_auto,
+            "user_confirmed": by_confirmed_by["user"],
+            "superseded": superseded,
+            "need_review": need_review,
+            "auto_confirm_rate": round(system_confirmed / total, 4) if total else 0.0,
+        },
+        "calibration": {
+            # ECE needs ground-truth labels (predicted confidence vs actual
+            # correctness) and is therefore an offline-eval metric, not a live
+            # one. Surfaced here as a reference to the eval baseline so the
+            # dashboard does not fabricate a runtime number.
+            "ece_offline_baseline": 0.108,
+            "note": "ECE is computed offline against labelled eval data, not at runtime.",
+        },
+    }
+
+
+@router.get("/sync-health")
+async def observability_sync_health(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(_guard_internal_observability),
+) -> dict:
+    """Section A — per-source sync state with staleness vs configured interval.
+
+    Adds value over the raw ``/sync/status`` feed by computing how stale each
+    source is relative to its configured sync interval. A source is flagged
+    stale once it has gone longer than 2x its interval without a successful
+    sync (or has never synced).
+    """
+    interval_by_source = {
+        "gmail": settings.sync_gmail_interval_minutes,
+        "drive": settings.sync_drive_interval_minutes,
+    }
+    stmt = select(SyncState).where(SyncState.user_id == current_user.id)
+    states = list((await db.execute(stmt)).scalars().all())
+
+    now = datetime.now(timezone.utc)
+    sources: list[dict] = []
+    any_error = False
+    any_stale = False
+    for s in states:
+        interval = interval_by_source.get(s.source_type, 0)
+        staleness_min: float | None = None
+        is_stale = True
+        if s.last_sync_at is not None:
+            last = s.last_sync_at
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            staleness_min = round((now - last).total_seconds() / 60.0, 1)
+            is_stale = interval > 0 and staleness_min > interval * 2
+        has_error = bool(s.error_message) or s.status == "error"
+        any_error = any_error or has_error
+        any_stale = any_stale or is_stale
+        sources.append(
+            {
+                "source_type": s.source_type,
+                "status": s.status,
+                "last_sync_at": s.last_sync_at,
+                "staleness_minutes": staleness_min,
+                "interval_minutes": interval,
+                "is_stale": is_stale,
+                "has_error": has_error,
+                "error_message": s.error_message,
+            }
+        )
+
+    overall = "healthy"
+    if any_error:
+        overall = "error"
+    elif any_stale:
+        overall = "stale"
+    return {"overall": overall, "sources": sources}

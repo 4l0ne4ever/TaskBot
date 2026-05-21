@@ -1,6 +1,6 @@
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -45,10 +45,21 @@ class _FakeResult:
 
 
 class _FakeDB:
-    def __init__(self, *, pipeline_runs=None, total_by_doc=None, missing_by_doc=None):
+    def __init__(
+        self,
+        *,
+        pipeline_runs=None,
+        total_by_doc=None,
+        missing_by_doc=None,
+        quality_rows=None,
+        sync_states=None,
+    ):
         self._pipeline_runs = pipeline_runs or []
         self._total_by_doc = total_by_doc or {}
         self._missing_by_doc = missing_by_doc or {}
+        # quality_rows: list of (status, confirmed_by, count) tuples
+        self._quality_rows = quality_rows or []
+        self._sync_states = sync_states or []
 
     async def execute(self, stmt):
         text = str(stmt)
@@ -59,6 +70,10 @@ class _FakeDB:
             return _FakeResult(rows=[len(self._pipeline_runs)])
         if "FROM pipeline_runs" in text:
             return _FakeResult(rows=self._pipeline_runs)
+        if "FROM sync_states" in text:
+            return _FakeResult(rows=self._sync_states)
+        if "FROM tasks" in text and "GROUP BY tasks.status" in text:
+            return _FakeResult(rows=self._quality_rows)
         if "FROM tasks" in text and "GROUP BY tasks.source_doc_id" in text:
             if "tasks.deadline IS NULL" in text:
                 return _FakeResult(rows=list(self._missing_by_doc.items()))
@@ -196,3 +211,88 @@ def test_runs_uses_grouped_task_counts(monkeypatch) -> None:
     assert by_id[str(run1.id)]["quality"]["missing_deadline_tasks"] == 1
     assert by_id[str(run2.id)]["quality"]["total_tasks"] == 2
     assert by_id[str(run2.id)]["quality"]["missing_deadline_tasks"] == 0
+
+
+def test_quality_funnel_and_auto_confirm_rate(monkeypatch) -> None:
+    # 30 auto-confirmed, 3 manually confirmed, 5 need review, 2 superseded
+    # (pending but previously confirmed), 1 dismissed → 41 total.
+    fake_db = _FakeDB(
+        quality_rows=[
+            ("confirmed", "system", 30),
+            ("confirmed", "user", 3),
+            ("pending", None, 5),
+            ("pending", "system", 2),
+            ("dismissed", None, 1),
+        ]
+    )
+    app = _build_app(fake_db, _FakeRedis(), monkeypatch)
+    client = TestClient(app)
+    r = client.get("/observability/quality", headers={"x-internal-token": "secret-token"})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["total_tasks"] == 41
+    assert data["by_status"] == {"confirmed": 33, "pending": 7, "dismissed": 1}
+    assert data["by_confirmed_by"] == {"system": 32, "user": 3, "none": 6}
+    ac = data["auto_confirm"]
+    assert ac["system_confirmed"] == 32          # 30 confirmed + 2 superseded
+    assert ac["currently_confirmed_auto"] == 30  # only status=confirmed
+    assert ac["user_confirmed"] == 3
+    assert ac["superseded"] == 2                 # pending + non-null confirmed_by
+    assert ac["need_review"] == 5                # pending + null confirmed_by
+    assert ac["auto_confirm_rate"] == round(32 / 41, 4)
+    assert data["calibration"]["ece_offline_baseline"] == 0.108
+
+
+def test_quality_empty_returns_zero_rate(monkeypatch) -> None:
+    app = _build_app(_FakeDB(quality_rows=[]), _FakeRedis(), monkeypatch)
+    client = TestClient(app)
+    r = client.get("/observability/quality", headers={"x-internal-token": "secret-token"})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["total_tasks"] == 0
+    assert data["auto_confirm"]["auto_confirm_rate"] == 0.0
+
+
+def test_sync_health_flags_stale_and_error(monkeypatch) -> None:
+    from app.models.sync_state import SyncState
+
+    now = datetime.now(timezone.utc)
+    fresh = SyncState(
+        id=uuid.uuid4(), user_id=_USER_ID, source_type="gmail",
+        last_sync_at=now - timedelta(minutes=5), status="idle", error_message=None,
+    )
+    stale = SyncState(
+        id=uuid.uuid4(), user_id=_USER_ID, source_type="drive",
+        last_sync_at=now - timedelta(minutes=120), status="idle", error_message=None,
+    )
+    fake_db = _FakeDB(sync_states=[fresh, stale])
+    app = _build_app(fake_db, _FakeRedis(), monkeypatch)
+    client = TestClient(app)
+    r = client.get("/observability/sync-health", headers={"x-internal-token": "secret-token"})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    by_source = {s["source_type"]: s for s in data["sources"]}
+    # gmail interval 15 → 5min is fresh; drive interval 30 → 120min > 2x60 stale.
+    assert by_source["gmail"]["is_stale"] is False
+    assert by_source["drive"]["is_stale"] is True
+    assert data["overall"] == "stale"
+
+
+def test_sync_health_never_synced_is_stale(monkeypatch) -> None:
+    from app.models.sync_state import SyncState
+
+    never = SyncState(
+        id=uuid.uuid4(), user_id=_USER_ID, source_type="gmail",
+        last_sync_at=None, status="error", error_message="token expired",
+    )
+    fake_db = _FakeDB(sync_states=[never])
+    app = _build_app(fake_db, _FakeRedis(), monkeypatch)
+    client = TestClient(app)
+    r = client.get("/observability/sync-health", headers={"x-internal-token": "secret-token"})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    src = data["sources"][0]
+    assert src["is_stale"] is True
+    assert src["staleness_minutes"] is None
+    assert src["has_error"] is True
+    assert data["overall"] == "error"

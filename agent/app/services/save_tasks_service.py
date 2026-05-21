@@ -127,6 +127,14 @@ async def async_save_tasks(state: PipelineState) -> dict:
                     )
                     reuse_rows = list((await session.execute(pool_stmt)).scalars().all())
 
+                # Titles that appear in an intra-batch conflict — auto-confirm
+                # must not fire for conflicted tasks; they need human review.
+                conflicting_titles: set[str] = {
+                    c.get("task_title", "").strip()
+                    for c in conflicts
+                    if isinstance(c.get("task_title"), str)
+                }
+
                 reused_ids: set[uuid.UUID] = set()
                 title_to_new_id: dict[str, uuid.UUID] = {}
                 for vt in validated_tasks:
@@ -161,8 +169,17 @@ async def async_save_tasks(state: PipelineState) -> dict:
                         best.priority = vt.get("priority") if isinstance(vt.get("priority"), str) else None
                         best.uncertainty = vt.get("uncertainty") if isinstance(vt.get("uncertainty"), dict) else None
                         best.missing_fields = list(vt.get("missing_fields") or [])
+                        # Refresh the evidence quote from this re-extraction: a
+                        # newer message in the same dedupe group may carry a
+                        # better-supported quote, so keep it in sync rather than
+                        # leaving the stale prior value.
+                        best.evidence_quote = (
+                            vt.get("evidence_quote") if isinstance(vt.get("evidence_quote"), str) else None
+                        )
                         best.source_doc_id = source_doc_uuid
                         best.updated_at = datetime.now(UTC)
+                        if best.status == "confirmed":
+                            best.status = "pending"
                         saved_task_ids.append(str(best.id))
                         title_to_new_id[tkey] = best.id
                     else:
@@ -172,6 +189,7 @@ async def async_save_tasks(state: PipelineState) -> dict:
                             user_id=user_uuid,
                             source_doc_id=source_doc_uuid,
                             title=tkey,
+                            status="pending",
                             description=vt.get("description") if isinstance(vt.get("description"), str) else None,
                             assignee=vt.get("assignee") if isinstance(vt.get("assignee"), str) else None,
                             assignee_canonical=vt.get("assignee_canonical") if isinstance(vt.get("assignee_canonical"), str) else None,
@@ -180,7 +198,20 @@ async def async_save_tasks(state: PipelineState) -> dict:
                             priority=vt.get("priority") if isinstance(vt.get("priority"), str) else None,
                             uncertainty=vt.get("uncertainty") if isinstance(vt.get("uncertainty"), dict) else None,
                             missing_fields=list(vt.get("missing_fields") or []),
+                            evidence_quote=vt.get("evidence_quote") if isinstance(vt.get("evidence_quote"), str) else None,
                         )
+                        # Auto-confirm: high-confidence new tasks need zero clicks.
+                        # Criteria: pipeline's calibrated band (uncertainty IS NULL)
+                        # + not involved in an intra-batch conflict (needs human
+                        # resolution) + at least one actionable field so the task
+                        # is meaningful enough to calendar/assign without review.
+                        if (
+                            task.uncertainty is None
+                            and tkey not in conflicting_titles
+                            and (task.deadline is not None or task.assignee is not None)
+                        ):
+                            task.status = "confirmed"
+                            task.confirmed_by = "system"
                         session.add(task)
                         saved_task_ids.append(str(tid))
                         title_to_new_id[tkey] = tid

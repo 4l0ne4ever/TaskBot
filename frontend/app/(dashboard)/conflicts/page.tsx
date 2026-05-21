@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { api, type ConflictSort } from "@/lib/api";
 import { Pagination } from "@/components/ui/Pagination";
 import { ScopeBadge, SCOPE_OPTIONS } from "@/components/conflicts/ScopeBadge";
+import { HighlightExcerpt } from "@/components/ui/HighlightExcerpt";
 import type { Conflict, ConflictScope, MergeableField, Task, TaskSource } from "@/lib/types";
 
 const PAGE_SIZE = 20;
@@ -81,7 +82,7 @@ function TaskSide({ t }: { t: Task }) {
                     <span className="font-mono text-[10px] text-[var(--muted)]">{src.source_ref}</span>
                   </div>
                   <pre className="px-3 py-2 whitespace-pre-wrap font-sans text-[var(--muted)] leading-relaxed max-h-48 overflow-y-auto">
-                    {src.excerpt ?? "No text content."}
+                    <HighlightExcerpt text={src.excerpt ?? "No text content."} quote={t.evidence_quote} />
                   </pre>
                 </>
               ) : (

@@ -37,6 +37,8 @@ class TaskResponse(BaseModel):
     missing_fields: list[str] | None
     calendar_event_id: str | None
     notification_sent: bool
+    evidence_quote: str | None = None
+    confirmed_by: str | None = None
     source_doc_id: UUID | None
     source_type: str | None = None
     created_at: datetime

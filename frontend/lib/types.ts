@@ -29,6 +29,8 @@ export interface Task {
   missing_fields: string[] | null;
   calendar_event_id: string | null;
   notification_sent: boolean;
+  evidence_quote: string | null;
+  confirmed_by: string | null;
   source_doc_id: string | null;
   source_type: string | null;
   created_at: string;

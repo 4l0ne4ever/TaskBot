@@ -77,7 +77,7 @@ export default function TasksPage() {
   useEffect(() => { void load(page); }, [load, page]);
 
   async function confirmTask(id: string) {
-    setTasks((prev) => prev.map((t) => t.id === id ? { ...t, status: "confirmed" } : t));
+    setTasks((prev) => prev.map((t) => t.id === id ? { ...t, status: "confirmed", confirmed_by: "user" } : t));
     try {
       await api.tasks.update(id, { status: "confirmed" });
       toast.success("Confirmed");
@@ -92,6 +92,17 @@ export default function TasksPage() {
     try {
       await api.tasks.update(id, { status: "dismissed" });
       toast.success("Dismissed");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Update failed");
+      void load(page);
+    }
+  }
+
+  async function revertTask(id: string) {
+    setTasks((prev) => prev.map((t) => t.id === id ? { ...t, status: "pending", confirmed_by: null } : t));
+    try {
+      await api.tasks.update(id, { status: "pending" });
+      toast.success("Reverted to pending");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Update failed");
       void load(page);
@@ -237,6 +248,16 @@ export default function TasksPage() {
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
                         <PriorityBadge priority={t.priority} />
+                        {t.status === "confirmed" && t.confirmed_by === "system" && (
+                          <span className="rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-300 text-[10px] font-medium px-2 py-0.5" title="Auto-confirmed by AI — click Revert to review manually">
+                            Auto
+                          </span>
+                        )}
+                        {t.status === "pending" && t.confirmed_by !== null && (
+                          <span className="rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-300 text-[10px] font-medium px-2 py-0.5" title="Updated by a new message — please re-confirm">
+                            Updated
+                          </span>
+                        )}
                         {(t.missing_fields?.length ?? 0) > 0 && (
                           <span className="rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-300 text-[10px] font-medium px-2 py-0.5">
                             Missing: {(t.missing_fields ?? []).join(", ")}
@@ -267,12 +288,24 @@ export default function TasksPage() {
                             Dismiss
                           </button>
                         </div>
+                      ) : t.status === "confirmed" ? (
+                        <div className="flex items-center gap-2 justify-end">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider rounded-full px-2 py-0.5 bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
+                            confirmed
+                          </span>
+                          {t.confirmed_by === "system" && (
+                            <button
+                              type="button"
+                              onClick={() => void revertTask(t.id)}
+                              className="text-[10px] text-[var(--muted)] hover:text-[var(--foreground)] opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Revert to pending for manual review"
+                            >
+                              Revert
+                            </button>
+                          )}
+                        </div>
                       ) : (
-                        <span className={`text-[10px] font-semibold uppercase tracking-wider rounded-full px-2 py-0.5 ${
-                          t.status === "confirmed"
-                            ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"
-                            : "bg-gray-500/15 text-gray-500 dark:text-gray-400"
-                        }`}>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider rounded-full px-2 py-0.5 bg-gray-500/15 text-gray-500 dark:text-gray-400">
                           {t.status}
                         </span>
                       )}

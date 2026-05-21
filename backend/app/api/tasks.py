@@ -1,3 +1,4 @@
+import json
 import re
 from datetime import date, datetime, timezone
 from uuid import UUID
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.config import get_settings
+from app.db.redis import get_redis
 from app.db.session import get_db
 from app.models.source_document import SourceDocument
 from app.models.task import Task
@@ -162,7 +164,41 @@ async def update_task(
     if changes:
         task.updated_at = datetime.now(timezone.utc)
 
+    # confirmed_by is controlled server-side — the client only sends status.
+    if changes.get("status") == "confirmed":
+        task.confirmed_by = "user"
+    elif changes.get("status") == "pending":
+        task.confirmed_by = None  # intentional revert clears badge signal
+
+    # When confirming a task that has a deadline, enqueue a calendar event
+    # creation/update job so the event appears without requiring a full sync.
+    need_calendar = changes.get("status") == "confirmed" and task.deadline is not None
+    access_token: str | None = None
+    if need_calendar:
+        from app.api.conflicts import _build_calendar_resync_payload
+        access_token, _ = await _build_calendar_resync_payload(current_user)
+
     enriched = await _enrich_tasks(db, [task])
+
+    # Commit before enqueue so the agent reads the confirmed task, not stale state.
+    await db.commit()
+
+    if access_token:
+        settings = get_settings()
+        redis_client = await get_redis()
+        await redis_client.rpush(
+            settings.pipeline_queue_name,
+            json.dumps(
+                {
+                    "source_type": "calendar_resync",
+                    "user_id": str(current_user.id),
+                    "access_token": access_token,
+                    "task_id": str(task.id),
+                    "triggered_by": "task_confirm",
+                }
+            ),
+        )
+
     return enriched[0]
 
 

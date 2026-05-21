@@ -56,7 +56,11 @@ async def async_dispatch_notifications(state: PipelineState) -> dict:
 
     async with AsyncSessionLocal() as session:
         async with session.begin():
-            stmt = select(Task).where(Task.user_id == user_uuid, Task.id.in_(saved_task_ids))
+            stmt = select(Task).where(
+                Task.user_id == user_uuid,
+                Task.id.in_(saved_task_ids),
+                Task.status == "confirmed",
+            )
             result = await session.execute(stmt)
             tasks = list(result.scalars().all())
 

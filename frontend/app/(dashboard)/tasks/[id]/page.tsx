@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { api } from "@/lib/api";
+import { HighlightExcerpt } from "@/components/ui/HighlightExcerpt";
 import type { Task, TaskSource } from "@/lib/types";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -189,7 +190,7 @@ export default function TaskDetailPage() {
                       <span className="ml-auto text-[var(--muted)]">{new Date(source.created_at).toLocaleDateString()}</span>
                     </div>
                     <pre className="px-4 py-3 whitespace-pre-wrap font-sans text-[var(--muted)] leading-relaxed max-h-64 overflow-y-auto">
-                      {source.excerpt ?? "No text content available."}
+                      <HighlightExcerpt text={source.excerpt ?? "No text content available."} quote={task.evidence_quote} />
                     </pre>
                   </>
                 ) : (
