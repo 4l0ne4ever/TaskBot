@@ -14,6 +14,7 @@ import type {
   SyncStateRow,
   Task,
   TaskSource,
+  TeamView,
 } from "./types";
 
 export type ConflictSort = "priority" | "created_at";
@@ -119,6 +120,7 @@ export const api = {
       const q = status ? `?status=${status}` : "";
       return apiFetch<{ deleted: number }>(`/tasks${q}`, { method: "DELETE" });
     },
+    team: () => apiFetch<TeamView>("/tasks/team"),
   },
   conflicts: {
     list: (params: {

@@ -23,6 +23,7 @@ dist/
 build/
 .DS_Store
 .next/
+*.tsbuildinfo
 *.sh
 docs/
 .github/

@@ -1,6 +1,6 @@
 import json
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
@@ -597,3 +597,82 @@ def test_patch_confirm_after_supersede_overwrites_confirmed_by() -> None:
     assert r.status_code == 200, r.text
     assert t1.confirmed_by == "user"
     assert r.json()["confirmed_by"] == "user"
+
+
+# ─── Phase 8.2: Team View ───────────────────────────────────────────────────
+
+def _today() -> date:
+    return datetime.now(timezone.utc).date()
+
+
+def test_team_view_groups_by_canonical_assignee() -> None:
+    user = _make_user()
+    # Two tasks for "Minh" (canonical), one for "Lan"; canonical wins over raw.
+    t1 = _make_task(tid=uuid.uuid4(), assignee="Minh N.", assignee_canonical="Minh", deadline=None)
+    t2 = _make_task(tid=uuid.uuid4(), assignee="minh", assignee_canonical="Minh", deadline=None)
+    t3 = _make_task(tid=uuid.uuid4(), assignee="Lan", assignee_canonical="Lan", deadline=None)
+    db = _FakeDB(tasks=[t1, t2, t3])
+    client = TestClient(_build_app(db, user))
+    r = client.get("/tasks/team")
+    assert r.status_code == 200, r.text
+    data = r.json()
+    by_name = {m["assignee"]: m for m in data["members"]}
+    assert by_name["Minh"]["open"] == 2
+    assert by_name["Lan"]["open"] == 1
+
+
+def test_team_view_risk_flags() -> None:
+    user = _make_user()
+    today = _today()
+    overdue = _make_task(tid=uuid.uuid4(), assignee_canonical="Minh", deadline=today - timedelta(days=2))
+    soon = _make_task(tid=uuid.uuid4(), assignee_canonical="Minh", deadline=today + timedelta(days=3))
+    far = _make_task(tid=uuid.uuid4(), assignee_canonical="Minh", deadline=today + timedelta(days=60))
+    db = _FakeDB(tasks=[overdue, soon, far])
+    client = TestClient(_build_app(db, user))
+    r = client.get("/tasks/team")
+    assert r.status_code == 200, r.text
+    m = next(x for x in r.json()["members"] if x["assignee"] == "Minh")
+    assert m["overdue"] == 1
+    assert m["due_this_week"] == 1
+    assert m["open"] == 3
+
+
+def test_team_view_in_conflict_flag() -> None:
+    user = _make_user()
+    t1 = _make_task(tid=_TASK_ID, assignee_canonical="Minh", deadline=None)
+    # _make_conflict references _TASK_ID in task_ids, unresolved.
+    db = _FakeDB(tasks=[t1], conflicts=[_make_conflict()])
+    client = TestClient(_build_app(db, user))
+    r = client.get("/tasks/team")
+    assert r.status_code == 200, r.text
+    m = next(x for x in r.json()["members"] if x["assignee"] == "Minh")
+    assert m["in_conflict"] == 1
+
+
+def test_team_view_needs_review_and_excludes_dismissed() -> None:
+    user = _make_user()
+    pending = _make_task(tid=uuid.uuid4(), assignee_canonical="Lan", status="pending", confirmed_by=None, deadline=None)
+    confirmed = _make_task(tid=uuid.uuid4(), assignee_canonical="Lan", status="confirmed", confirmed_by="user", deadline=None)
+    dismissed = _make_task(tid=uuid.uuid4(), assignee_canonical="Lan", status="dismissed", deadline=None)
+    db = _FakeDB(tasks=[pending, confirmed, dismissed])
+    client = TestClient(_build_app(db, user))
+    r = client.get("/tasks/team")
+    assert r.status_code == 200, r.text
+    m = next(x for x in r.json()["members"] if x["assignee"] == "Lan")
+    assert m["open"] == 2          # dismissed excluded
+    assert m["pending"] == 1
+    assert m["confirmed"] == 1
+    assert m["needs_review"] == 1  # only the pending+null one
+
+
+def test_team_view_unassigned_bucket() -> None:
+    user = _make_user()
+    t1 = _make_task(tid=uuid.uuid4(), assignee=None, assignee_canonical=None, deadline=None)
+    db = _FakeDB(tasks=[t1])
+    client = TestClient(_build_app(db, user))
+    r = client.get("/tasks/team")
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["unassigned"]["assignee"] is None
+    assert data["unassigned"]["open"] == 1
+    assert all(m["assignee"] is not None for m in data["members"])

@@ -150,6 +150,22 @@ export interface SyncHealth {
   sources: SyncHealthSource[];
 }
 
+export interface TeamMemberStats {
+  assignee: string | null;
+  open: number;
+  pending: number;
+  confirmed: number;
+  overdue: number;
+  due_this_week: number;
+  in_conflict: number;
+  needs_review: number;
+}
+
+export interface TeamView {
+  members: TeamMemberStats[];
+  unassigned: TeamMemberStats;
+}
+
 export interface ObservabilitySummary {
   llm: {
     sample_size: number;

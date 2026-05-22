@@ -52,6 +52,29 @@ class TaskSourceResponse(BaseModel):
     created_at: datetime
 
 
+class TeamMemberStats(BaseModel):
+    """Per-assignee workload + risk rollup for the Team View (Phase 8.2).
+
+    ``assignee`` is the canonical name (falls back to the raw assignee string,
+    or ``null`` for the unassigned bucket). Counts exclude dismissed tasks
+    except where noted.
+    """
+
+    assignee: str | None
+    open: int            # not dismissed
+    pending: int
+    confirmed: int
+    overdue: int         # deadline < today, not dismissed
+    due_this_week: int   # today <= deadline <= today+7, not dismissed
+    in_conflict: int     # appears in an unresolved conflict
+    needs_review: int    # pending and never confirmed (confirmed_by is null)
+
+
+class TeamView(BaseModel):
+    members: list[TeamMemberStats]
+    unassigned: TeamMemberStats
+
+
 class TaskUpdate(BaseModel):
     title: str | None = None
     description: str | None = None

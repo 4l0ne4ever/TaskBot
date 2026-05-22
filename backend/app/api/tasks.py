@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,10 +11,17 @@ from app.api.deps import get_current_user
 from app.config import get_settings
 from app.db.redis import get_redis
 from app.db.session import get_db
+from app.models.conflict import Conflict
 from app.models.source_document import SourceDocument
 from app.models.task import Task
 from app.models.user import User
-from app.schemas.task import TaskResponse, TaskSourceResponse, TaskUpdate
+from app.schemas.task import (
+    TaskResponse,
+    TaskSourceResponse,
+    TaskUpdate,
+    TeamMemberStats,
+    TeamView,
+)
 
 _MAX_EXCERPT_CHARS = 600
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -99,6 +106,94 @@ async def list_tasks(
     result = await db.execute(stmt)
     tasks = list(result.scalars().all())
     return await _enrich_tasks(db, tasks)
+
+
+@router.get("/team", response_model=TeamView)
+async def team_view(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> TeamView:
+    """Workload + risk rollup grouped by assignee (Phase 8.2 Team View).
+
+    Single-tenant: the "team" is the set of assignees named across this user's
+    tasks. Aggregation is done in Python rather than SQL — per-user task volume
+    is small (tens to low hundreds), and the in-conflict flag needs membership
+    in unresolved conflicts' ``task_ids`` arrays, which is awkward in grouped
+    SQL but trivial as a set lookup. Registered before ``/{task_id}`` so the
+    static path isn't captured by the UUID path parameter.
+    """
+    task_rows = list(
+        (await db.execute(select(Task).where(Task.user_id == current_user.id))).scalars().all()
+    )
+
+    # Task ids that sit in an unresolved conflict → risk flag.
+    conflict_rows = list(
+        (
+            await db.execute(
+                select(Conflict).where(
+                    Conflict.user_id == current_user.id,
+                    Conflict.resolved == False,  # noqa: E712
+                )
+            )
+        ).scalars().all()
+    )
+    conflicted_ids: set[UUID] = set()
+    for c in conflict_rows:
+        if c.task_ids:
+            conflicted_ids.update(c.task_ids)
+
+    today = datetime.now(timezone.utc).date()
+    week_end = today + timedelta(days=7)
+
+    # Bucket key: canonical name, else raw assignee, else None (unassigned).
+    buckets: dict[str | None, dict[str, int]] = {}
+
+    def _bucket(key: str | None) -> dict[str, int]:
+        return buckets.setdefault(
+            key,
+            {
+                "open": 0,
+                "pending": 0,
+                "confirmed": 0,
+                "overdue": 0,
+                "due_this_week": 0,
+                "in_conflict": 0,
+                "needs_review": 0,
+            },
+        )
+
+    for t in task_rows:
+        raw = (t.assignee_canonical or t.assignee or "").strip()
+        key = raw or None
+        b = _bucket(key)
+        dismissed = t.status == "dismissed"
+        if not dismissed:
+            b["open"] += 1
+            if t.status == "pending":
+                b["pending"] += 1
+                if t.confirmed_by is None:
+                    b["needs_review"] += 1
+            elif t.status == "confirmed":
+                b["confirmed"] += 1
+            if t.deadline is not None:
+                if t.deadline < today:
+                    b["overdue"] += 1
+                elif today <= t.deadline <= week_end:
+                    b["due_this_week"] += 1
+            if t.id in conflicted_ids:
+                b["in_conflict"] += 1
+
+    def _stats(key: str | None) -> TeamMemberStats:
+        b = buckets.get(key) or _bucket(key)
+        return TeamMemberStats(assignee=key, **b)
+
+    members = [
+        _stats(key)
+        for key in sorted((k for k in buckets if k is not None), key=str.casefold)
+    ]
+    # Sort the busiest first so an overloaded member surfaces at the top.
+    members.sort(key=lambda m: (m.overdue, m.in_conflict, m.open), reverse=True)
+    return TeamView(members=members, unassigned=_stats(None))
 
 
 @router.get("/source-by-ref", response_model=TaskSourceResponse)
