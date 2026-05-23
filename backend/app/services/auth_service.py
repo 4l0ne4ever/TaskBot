@@ -18,6 +18,10 @@ SCOPES = [
     "email",
     "profile",
     "https://www.googleapis.com/auth/gmail.readonly",
+    # gmail.send lets the Weekly Brief (Phase 8.3) send the manager their own
+    # digest. Adding a scope invalidates existing grants — users must logout +
+    # re-consent once before send works.
+    "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/calendar.events",
 ]

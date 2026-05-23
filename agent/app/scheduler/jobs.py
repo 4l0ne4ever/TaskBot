@@ -194,6 +194,34 @@ async def sync_all_users_drive() -> None:
         await r.aclose()
 
 
+async def send_weekly_briefs() -> None:
+    """Cron job: enqueue a Weekly Brief for every sync-eligible user.
+
+    Mirrors ``sync_all_users_gmail`` — reuses the same token-refresh path so the
+    agent never sends a stale token to the MCP. The actual build + send happens
+    in the queue consumer (``weekly_brief`` job), keeping this job fast.
+    """
+    import redis.asyncio as aioredis
+
+    users = await _get_sync_eligible_users()
+    if not users:
+        logger.debug("weekly_brief: no eligible users")
+        return
+    r = aioredis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        for u in users:
+            job = json.dumps({
+                "user_id": u["id"],
+                "source_type": "weekly_brief",
+                "access_token": u["access_token"],
+                "triggered_by": "schedule",
+            })
+            await r.rpush(settings.pipeline_queue_name, job)
+        logger.info("weekly_brief: enqueued %d users", len(users))
+    finally:
+        await r.aclose()
+
+
 async def _gemini_keepalive_job() -> None:
     from app.pipeline.llm import warmup_gemini_connection
 
@@ -236,6 +264,20 @@ def start_scheduler() -> None:
             replace_existing=True,
         )
         logger.info("scheduler: gemini keepalive every %dm", max(1, int(ka)))
+    if settings.weekly_brief_enabled:
+        scheduler.add_job(
+            send_weekly_briefs,
+            "cron",
+            day_of_week=settings.weekly_brief_day_of_week,
+            hour=settings.weekly_brief_hour,
+            id="weekly_brief",
+            replace_existing=True,
+        )
+        logger.info(
+            "scheduler: weekly brief on %s @ %02d:00 UTC",
+            settings.weekly_brief_day_of_week,
+            settings.weekly_brief_hour,
+        )
     scheduler.start()
     logger.info(
         "scheduler started — gmail every %dm, drive every %dm",

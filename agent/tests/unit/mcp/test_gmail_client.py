@@ -106,3 +106,49 @@ async def test_get_attachment(monkeypatch: pytest.MonkeyPatch) -> None:
     client = GmailMCPClient(access_token="token")
     data = await client.get_attachment("m1", "a1")
     assert data["mime_type"] == "application/pdf"
+
+
+@pytest.mark.asyncio
+async def test_send_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setenv("GMAIL_MCP_URL", "https://gmail.mcp.test/mcp")
+
+    captured: dict = {}
+
+    async def _fake_call_tool(self, tool_name, args):
+        captured["tool"] = tool_name
+        captured["args"] = args
+        return {"id": "sent1", "threadId": "t1"}
+
+    monkeypatch.setattr("app.mcp.base_client.BaseMCPClient.call_tool", _fake_call_tool)
+
+    client = GmailMCPClient(access_token="token")
+    res = await client.send_message(
+        to="anna@example.com", subject="Weekly Brief", body_html="<b>hi</b>", body_text="hi"
+    )
+    assert res["id"] == "sent1"
+    assert captured["tool"] == "send_message"
+    assert captured["args"] == {
+        "to": "anna@example.com",
+        "subject": "Weekly Brief",
+        "body_html": "<b>hi</b>",
+        "body_text": "hi",
+    }
+
+
+@pytest.mark.asyncio
+async def test_send_message_omits_body_text_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setenv("GMAIL_MCP_URL", "https://gmail.mcp.test/mcp")
+
+    captured: dict = {}
+
+    async def _fake_call_tool(self, tool_name, args):
+        captured["args"] = args
+        return {"id": "x"}
+
+    monkeypatch.setattr("app.mcp.base_client.BaseMCPClient.call_tool", _fake_call_tool)
+
+    client = GmailMCPClient(access_token="token")
+    await client.send_message(to="a@b.com", subject="s", body_html="<p>h</p>")
+    assert "body_text" not in captured["args"]

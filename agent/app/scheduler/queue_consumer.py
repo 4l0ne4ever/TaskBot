@@ -1022,6 +1022,27 @@ async def _process_calendar_resync_job(user_id: str, access_token: str, task_id:
     )
 
 
+async def _process_weekly_brief_job(user_id: str, access_token: str) -> None:
+    """Build and self-send the manager's Weekly Brief (Phase 8.3).
+
+    Fail-safe like calendar dispatch: a missing gmail.send scope yields a 403
+    which ``async_send_weekly_brief`` returns as an error rather than raising.
+    We record it (user-actionable: reconnect for send permission) and move on.
+    """
+    from app.services.weekly_brief_service import async_send_weekly_brief
+
+    result = await async_send_weekly_brief(user_id, access_token)
+    if result.get("sent"):
+        logger.info("weekly_brief ok: user=%s", user_id)
+        return
+    errors = result.get("errors") or ["unknown failure"]
+    record_pipeline_error(
+        source_type="weekly_brief",
+        user_id=user_id,
+        error="; ".join(errors)[:300],
+    )
+
+
 async def consume_pipeline_jobs() -> None:
     """BLPOP loop: pick jobs from ``pipeline:jobs`` and dispatch."""
     r = await _get_redis()
@@ -1049,6 +1070,11 @@ async def consume_pipeline_jobs() -> None:
                     continue
                 logger.info("processing calendar_resync job for user %s task %s", user_id, task_id)
                 await _process_calendar_resync_job(user_id, token, task_id)
+                continue
+
+            if source == "weekly_brief":
+                logger.info("processing weekly_brief job for user %s", user_id)
+                await _process_weekly_brief_job(user_id, token)
                 continue
 
             time_range = job.get("time_range", "1d")

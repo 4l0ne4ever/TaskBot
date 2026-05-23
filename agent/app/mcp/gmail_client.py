@@ -42,3 +42,21 @@ class GmailMCPClient(BaseMCPClient):
             "get_attachment",
             {"message_id": message_id, "attachment_id": attachment_id},
         )
+
+    async def send_message(
+        self,
+        *,
+        to: str,
+        subject: str,
+        body_html: str,
+        body_text: str | None = None,
+    ) -> dict[str, Any]:
+        """Send an email via the Gmail MCP. Requires the gmail.send scope.
+
+        ``From`` is omitted so Gmail uses the authenticated account. Used by the
+        Weekly Brief to self-send the manager their digest.
+        """
+        args: dict[str, Any] = {"to": to, "subject": subject, "body_html": body_html}
+        if body_text is not None:
+            args["body_text"] = body_text
+        return await self.call_tool("send_message", args)

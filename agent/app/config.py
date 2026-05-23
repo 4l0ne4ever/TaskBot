@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     pipeline_queue_name: str = "pipeline:jobs"
     sync_gmail_interval_minutes: int = 15
     sync_drive_interval_minutes: int = 30
+    # Weekly Brief (Phase 8.3): cron schedule for the manager digest. Disabled
+    # by default — set weekly_brief_enabled=true to turn on the scheduled send.
+    # day_of_week/hour follow APScheduler cron semantics (mon=Monday, UTC).
+    weekly_brief_enabled: bool = False
+    weekly_brief_day_of_week: str = "mon"
+    weekly_brief_hour: int = 7
     langsmith_api_key: str | None = None
     langsmith_tracing: bool = True
     langsmith_project: str = "taskExtractor"

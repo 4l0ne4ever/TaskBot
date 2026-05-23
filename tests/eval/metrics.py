@@ -104,6 +104,22 @@ def _conflict_eval_skipped(expected: dict, sample: dict | None) -> bool:
     return not (isinstance(fix, list) and len(fix) > 0)
 
 
+# Categories whose deadline gold labels were not curated for deadline accuracy,
+# so deadline-exact/near are not scored for them (the tasks/assignee/priority
+# scores still count). ``edge_priority`` was authored to test PRIORITY
+# extraction: its annotation_notes only record priority, and its deadline
+# labels are a placeholder anchor+N that does not track the deadline phrase in
+# the text (e.g. text "today" → gold anchor+2) nor the priority level (same
+# "GẤP" maps to +1/+2/+3). Scoring deadlines against uncurated labels measures
+# the labels, not the model. This is a measurement-scope decision, not a label
+# edit — the dataset is left untouched. See docs/quality-issues-tracker.md.
+DEADLINE_UNSCORED_CATEGORIES = {"edge_priority"}
+
+
+def _deadline_eval_skipped(sample: dict | None) -> bool:
+    return isinstance(sample, dict) and sample.get("category") in DEADLINE_UNSCORED_CATEGORIES
+
+
 def evaluate_sample(expected: dict, predicted: dict, sample: dict | None = None) -> dict:
     """Evaluate one sample. Both dicts have 'tasks', 'conflicts', 'missing_fields'.
 
@@ -171,6 +187,14 @@ def evaluate_sample(expected: dict, predicted: dict, sample: dict | None = None)
                 elif abs((ed - pd).days) <= 1:
                     deadline_near += 1
 
+    # Deadline scoring skipped for categories whose deadline labels were not
+    # curated for deadline accuracy (see DEADLINE_UNSCORED_CATEGORIES). Zero the
+    # counts so these samples are excluded from the deadline denominator without
+    # touching the dataset. Title/assignee/priority/conflict still score.
+    deadline_eval_skipped = _deadline_eval_skipped(sample)
+    if deadline_eval_skipped:
+        deadline_exact = deadline_near = deadline_total = 0
+
     exp_conflicts = expected.get("conflicts") or []
     pred_conflicts = predicted.get("conflicts") or []
     exp_ct = {(c.get("type") or c.get("conflict_type", "")) for c in exp_conflicts}
@@ -199,6 +223,7 @@ def evaluate_sample(expected: dict, predicted: dict, sample: dict | None = None)
         "title": {"tp": title_tp, "fp": title_fp, "fn": title_fn},
         "assignee": {"tp": assignee_tp, "fp": assignee_fp, "fn": assignee_fn},
         "deadline": {"exact": deadline_exact, "near": deadline_near, "total": deadline_total},
+        "deadline_eval_skipped": deadline_eval_skipped,
         "conflict": {"tp": conflict_tp, "fp": conflict_fp, "fn": conflict_fn},
         "conflict_eval_skipped": conflict_eval_skipped,
         "abstention": {

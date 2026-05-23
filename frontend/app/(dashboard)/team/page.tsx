@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import { api } from "@/lib/api";
 import type { TeamMemberStats, TeamView } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,7 @@ function Row({ m, label }: { m: TeamMemberStats; label?: string }) {
 export default function TeamPage() {
   const [data, setData] = useState<TeamView | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     api.tasks
@@ -45,6 +47,22 @@ export default function TeamPage() {
       .then(setData)
       .catch((e) => setErr(e instanceof Error ? e.message : "Failed to load team view"));
   }, []);
+
+  async function sendBrief() {
+    setSending(true);
+    try {
+      const res = await api.digest.send();
+      if (res.status === "queued") {
+        toast.success("Weekly brief is sending to your inbox.");
+      } else {
+        toast.error(res.message || "Could not send the brief.");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to send brief");
+    } finally {
+      setSending(false);
+    }
+  }
 
   const hasUnassigned = data && data.unassigned.open > 0;
   const totals = data
@@ -62,10 +80,22 @@ export default function TeamPage() {
   return (
     <div className="space-y-6 max-w-5xl">
       <div className={cn(card, "p-6 space-y-1")}>
-        <h2 className="text-sm font-semibold text-[var(--foreground)]">Team Workload</h2>
-        <p className="text-xs text-[var(--muted)]">
-          Open tasks and risk flags grouped by assignee. Busiest first.
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold text-[var(--foreground)]">Team Workload</h2>
+            <p className="text-xs text-[var(--muted)]">
+              Open tasks and risk flags grouped by assignee. Busiest first.
+            </p>
+          </div>
+          <button
+            onClick={sendBrief}
+            disabled={sending}
+            className="shrink-0 rounded-lg bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-1.5 text-xs font-medium transition-colors"
+            title="Email yourself this week's brief (tasks, conflicts, workload)"
+          >
+            {sending ? "Sending…" : "Send weekly brief"}
+          </button>
+        </div>
         {totals && (
           <div className="flex flex-wrap gap-4 pt-3 text-sm">
             <span className="text-[var(--muted)]">

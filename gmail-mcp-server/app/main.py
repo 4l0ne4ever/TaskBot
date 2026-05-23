@@ -6,12 +6,39 @@ Calls Google Gmail API v1 (no service account; token is end-user OAuth).
 from __future__ import annotations
 
 import base64
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.utils import formataddr
 from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 
 GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me"
+
+
+def _build_raw_message(
+    *,
+    to: str,
+    subject: str,
+    body_html: str,
+    body_text: str | None = None,
+    sender: str | None = None,
+) -> str:
+    """Build an RFC822 message, base64url-encoded for Gmail's ``raw`` field.
+
+    Multipart/alternative with a plain-text fallback so clients without HTML
+    still render something. ``sender`` is optional — Gmail uses the
+    authenticated account when ``From`` is omitted, so we only set it when given.
+    """
+    msg = MIMEMultipart("alternative")
+    msg["To"] = to
+    msg["Subject"] = subject
+    if sender:
+        msg["From"] = formataddr(("TaskBot", sender))
+    msg.attach(MIMEText(body_text or "View this brief in an HTML-capable client.", "plain", "utf-8"))
+    msg.attach(MIMEText(body_html, "html", "utf-8"))
+    return base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
 
 app = FastAPI(title="TaskBot Gmail MCP (HTTP)")
 
@@ -143,5 +170,32 @@ async def mcp_invoke(request: Request) -> dict[str, Any]:
             if resp.status_code >= 400:
                 raise HTTPException(status_code=resp.status_code, detail=resp.text)
             return resp.json()
+
+        if tool_name == "send_message":
+            to = args.get("to")
+            subject = args.get("subject")
+            body_html = args.get("body_html")
+            if not to or not isinstance(to, str):
+                raise HTTPException(status_code=400, detail="Missing 'to'")
+            if not subject or not isinstance(subject, str):
+                raise HTTPException(status_code=400, detail="Missing 'subject'")
+            if not body_html or not isinstance(body_html, str):
+                raise HTTPException(status_code=400, detail="Missing 'body_html'")
+            raw = _build_raw_message(
+                to=to,
+                subject=subject,
+                body_html=body_html,
+                body_text=args.get("body_text") if isinstance(args.get("body_text"), str) else None,
+                sender=args.get("sender") if isinstance(args.get("sender"), str) else None,
+            )
+            resp = await client.post(
+                f"{GMAIL_API}/messages/send",
+                headers={**headers, "Content-Type": "application/json"},
+                json={"raw": raw},
+            )
+            if resp.status_code >= 400:
+                raise HTTPException(status_code=resp.status_code, detail=resp.text)
+            data = resp.json()
+            return {"id": data.get("id"), "threadId": data.get("threadId"), "labelIds": data.get("labelIds")}
 
         raise HTTPException(status_code=400, detail=f"Unknown tool_name: {tool_name}")

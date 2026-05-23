@@ -192,6 +192,12 @@ export const api = {
     status: (uploadId: string) =>
       apiFetch<{ upload_id: string; status: string }>(`/upload/${uploadId}/status`),
   },
+  digest: {
+    send: () =>
+      apiFetch<{ status: string; message: string; reason?: string }>("/digest/send", {
+        method: "POST",
+      }),
+  },
   observability: {
     quality: (window?: string) =>
       proxyFetch<QualityMetrics>(

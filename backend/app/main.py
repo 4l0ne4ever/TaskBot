@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, calendar, conflicts, observability, settings, sync, tasks, upload
+from app.api import auth, calendar, conflicts, digest, observability, settings, sync, tasks, upload
 from app.db.session import init_db
 from app.middleware import RateLimitMiddleware
 
@@ -33,6 +33,7 @@ app.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 app.include_router(sync.router, prefix="/sync", tags=["sync"])
 app.include_router(settings.router, prefix="/settings", tags=["settings"])
 app.include_router(upload.router, prefix="/upload", tags=["upload"])
+app.include_router(digest.router, prefix="/digest", tags=["digest"])
 
 
 @app.get("/health")
