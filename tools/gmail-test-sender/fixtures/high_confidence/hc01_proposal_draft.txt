@@ -1,0 +1,18 @@
+Hi Emily,
+
+I'd like you to handle the following:
+
+Task: Draft the Henderson client proposal (sections 1–4: scope, timeline, pricing, risks).
+Deadline: Tuesday, 10 June 2026, 5:00 PM ICT.
+Expected output: Google Doc ready for manager review.
+
+Context: This supports the Q3 pipeline review on 12 June.
+
+Resources:
+- Brief: https://docs.example.com/henderson-brief
+- Questions: reply-all or ping me on Slack
+
+Please confirm receipt by Monday 9 June.
+
+Thanks,
+Alex (Project Manager)

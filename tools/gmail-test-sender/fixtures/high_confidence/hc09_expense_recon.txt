@@ -1,0 +1,14 @@
+Emily,
+
+Finance needs the expense reconciliation for May closed out.
+
+Responsible: Emily
+Submit by: 2026-06-09 18:00 ICT
+Format: CSV export from ERP + one-page variance note.
+
+Target variance < 2% vs budget line 4100.
+
+Reply when uploaded to the Finance portal.
+
+Regards,
+Controller's office

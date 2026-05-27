@@ -1,0 +1,11 @@
+Chào Emily,
+
+Nhờ em review hợp đồng vendor Acme Corp và gửi comment bằng tracked changes trước 09:00 ngày 16/06/2026.
+
+Assignee: Emily
+Output: file DOCX comment xong + email tóm tắt 3 risk chính.
+
+Hợp đồng đính kèm (v3.2). Legal cần bản của Emily trước họp 16/06 chiều.
+
+Cảm ơn em,
+Phòng Procurement

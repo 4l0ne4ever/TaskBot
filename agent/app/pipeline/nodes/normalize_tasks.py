@@ -132,6 +132,33 @@ def _coerce_deadline_v2(d: object) -> dict | None:
     return out
 
 
+def _empty_deadline_v2() -> dict:
+    """Canonical ``type="none"`` deadline_v2 — identical in shape to what the LLM
+    emits for a genuinely date-less task (e.g. "finalize whenever").
+
+    Used for graceful degradation in ``_normalize_task``: when the LLM omits the
+    ``deadline_v2`` object entirely, or emits one that is unsalvageable (missing
+    ``confidence``, bad ``type``/``iso``), a *valid-title* task must not be
+    discarded over a single optional field. Substituting this shape keeps the
+    task as a visible pending item flagged "Missing: deadline" instead of
+    silently dropping it. Confidence is 0.0 because we have no deadline signal.
+    """
+    return {
+        "iso": None,
+        "start": None,
+        "end": None,
+        "text": None,
+        "resolved_from": None,
+        "confidence": 0.0,
+        "source": "llm",
+        "is_ambiguous": False,
+        "type": "none",
+        "week_offset": None,
+        "phrase_class": None,
+        "phrase_params": None,
+    }
+
+
 def _normalize_priority(value: object) -> str | None:
     if not isinstance(value, str):
         return None
@@ -197,7 +224,14 @@ def _normalize_task(item: dict, anchor: date | None, source_text: str | None = N
         return None
     deadline_v2 = _coerce_deadline_v2(item.get("deadline_v2"))
     if deadline_v2 is None:
-        return None
+        # Graceful degradation: a task with a valid title must not be discarded
+        # just because its deadline is missing or unsalvageable (LLM omitted the
+        # deadline_v2 wrapper, or emitted one without `confidence` / with a bad
+        # type). Keep it with an explicit no-deadline so it surfaces as a pending
+        # item flagged "Missing: deadline" — not vanished silently. The drop on a
+        # single field-level omission was amplifying LLM non-determinism into
+        # total task loss (real-world dogfooding finding, 2026-05-26).
+        deadline_v2 = _empty_deadline_v2()
     if anchor:
         deadline_v2 = enrich_deadline_v2_with_symbolic_iso(deadline_v2, anchor, source_text)
     confidence = item.get("confidence")

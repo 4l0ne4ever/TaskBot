@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { api } from "@/lib/api";
 import type { CalendarEvent } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, formatLocalDateKey } from "@/lib/utils";
 
 function startOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -15,7 +15,7 @@ function endOfMonth(d: Date): Date {
 }
 
 function fmt(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return formatLocalDateKey(d);
 }
 
 function fmtMonthYear(d: Date): string {

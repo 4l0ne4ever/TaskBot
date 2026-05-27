@@ -3,6 +3,17 @@
 Real Gmail/Drive account. No mock data. Run against a locally-running stack
 (`docker compose up` or host-side backend + agent + worker).
 
+> **Automated hero-scenario coverage** (deterministic, no live account, no LLM
+> quota) lives alongside this manual checklist:
+> - `agent/tests/e2e/test_hero_scenarios.py` — multi-source conflict (scenario 1)
+>   and smart auto-confirm through the full pipeline (scenario 3)
+> - `backend/tests/integration/test_hero_merge_e2e.py` — thread-update merge +
+>   calendar resync against real Postgres (scenario 2; auto-skips if DB down)
+>
+> Real-vs-synthetic validation scope is documented in
+> [`real-world-validation.md`](./real-world-validation.md). The flows below are
+> the full-stack manual walkthroughs against a real Google account.
+
 ## Prerequisites
 
 ```bash

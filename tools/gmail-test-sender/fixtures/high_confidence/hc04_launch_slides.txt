@@ -1,0 +1,14 @@
+Hi Emily,
+
+Task for you: Prepare presentation slides for the Beta launch readout.
+
+Assignee: Emily
+Deadline: Friday, 20 June 2026, 3:00 PM
+Format: 12–15 slides in Google Slides (problem, metrics, demo, rollout plan).
+
+Context: Exec review is scheduled 23/06. Slides must include adoption numbers from the May cohort.
+
+Please confirm you can meet the 20/06 deadline.
+
+Best,
+Jordan

@@ -1,0 +1,11 @@
+Team,
+
+Action items from stand-up (owners TBD):
+
+1. Fix staging flakiness
+2. Update runbook
+3. Schedule retro
+
+Please self-assign in Jira when you pick one up. Target: ASAP.
+
+Scrum master

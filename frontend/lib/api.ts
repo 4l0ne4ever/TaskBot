@@ -94,14 +94,48 @@ function tasksQuery(params: {
   return s ? `?${s}` : "";
 }
 
+export type TaskListResult = { tasks: Task[]; total: number };
+
+async function apiFetchList<T>(path: string, options?: RequestInit): Promise<{ data: T; total: number }> {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options?.headers,
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(await parseError(res));
+  }
+
+  const totalHeader = res.headers.get("X-Total-Count");
+  const data = (await res.json()) as T;
+  let total = totalHeader != null && totalHeader !== "" ? Number(totalHeader) : NaN;
+  if (!Number.isFinite(total) || total < 0) {
+    // Header unreadable (e.g. CORS) — infer from page fill so Next still works.
+    const len = Array.isArray(data) ? data.length : 0;
+    const limitMatch = /[?&]limit=(\d+)/.exec(path);
+    const offsetMatch = /[?&]offset=(\d+)/.exec(path);
+    const limit = limitMatch ? Number(limitMatch[1]) : len;
+    const offset = offsetMatch ? Number(offsetMatch[1]) : 0;
+    total = len < limit ? offset + len : offset + limit + 1;
+  }
+  return { data, total };
+}
+
 export const api = {
   auth: {
     me: () => apiFetch<{ id: string; email: string }>("/auth/me"),
     logout: () => apiFetch<{ message: string }>("/auth/logout", { method: "POST" }),
   },
   tasks: {
-    list: (params?: { status?: string; source?: string; sort?: string; limit?: number; offset?: number }) =>
-      apiFetch<Task[]>(`/tasks${tasksQuery(params ?? {})}`),
+    list: async (params?: { status?: string; source?: string; sort?: string; limit?: number; offset?: number }) => {
+      const { data, total } = await apiFetchList<Task[]>(`/tasks${tasksQuery(params ?? {})}`);
+      return { tasks: data, total };
+    },
     get: (id: string) => apiFetch<Task>(`/tasks/${id}`),
     update: (
       id: string,

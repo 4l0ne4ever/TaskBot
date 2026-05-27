@@ -1,0 +1,13 @@
+Chào Emily,
+
+Nhờ em deploy bản hotfix v2.4.1 lên production sau khi QA sign-off.
+
+Người thực hiện: Emily
+Hạn: 22/06/2026, 10:00 sáng
+Deliverable: deployment ticket DONE + smoke test checklist đính kèm.
+
+Runbook: wiki/runbooks/hotfix-v241.md
+Rollback owner cũng là Emily nếu error rate > 1% trong 30 phút.
+
+Trân trọng,
+SRE

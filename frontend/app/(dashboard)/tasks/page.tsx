@@ -8,7 +8,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import type { Conflict, Task } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 20;
 
 function PriorityBadge({ priority }: { priority: string | null }) {
   if (!priority) return null;
@@ -50,21 +50,12 @@ export default function TasksPage() {
     setLoading(true);
     try {
       const offset = (p - 1) * PAGE_SIZE;
-      const [t, c] = await Promise.all([
+      const [taskResult, c] = await Promise.all([
         api.tasks.list({ status: status || undefined, source: source || undefined, sort, limit: PAGE_SIZE, offset }),
         api.conflicts.list({ resolved: false }),
       ]);
-      setTasks(t);
-      // Backend returns up to PAGE_SIZE items; to know total we overfetch by 1
-      // The API supports offset/limit but doesn't return a total count header.
-      // We use a second call with a large limit only for the count.
-      if (t.length === PAGE_SIZE) {
-        const allCount = await api.tasks.list({ status: status || undefined, source: source || undefined, sort, limit: 1, offset: 9999 });
-        // Heuristic: if we got PAGE_SIZE, total is at least offset + PAGE_SIZE
-        setTotal(offset + PAGE_SIZE + (allCount.length > 0 ? PAGE_SIZE : 0));
-      } else {
-        setTotal(offset + t.length);
-      }
+      setTasks(taskResult.tasks);
+      setTotal(taskResult.total);
       setConflicts(c);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to load tasks");
@@ -315,7 +306,12 @@ export default function TasksPage() {
               </tbody>
             </table>
           </div>
-          <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPage={(p) => { setPage(p); void load(p); }} />
+          <Pagination
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={total}
+            onPage={(p) => setPage(p)}
+          />
         </div>
       )}
     </div>

@@ -3,8 +3,8 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import delete as _delete, select, update as _update
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import delete as _delete, func, select, update as _update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -72,20 +72,14 @@ async def _enrich_tasks(db: AsyncSession, tasks: list[Task]) -> list[TaskRespons
     ]
 
 
-@router.get("", response_model=list[TaskResponse])
-async def list_tasks(
-    status: str | None = Query(None, pattern=r"^(pending|confirmed|dismissed)$"),
-    source: str | None = Query(None, pattern=r"^(gmail|drive|upload)$"),
-    deadline_from: date | None = Query(None),
-    deadline_to: date | None = Query(None),
-    sort: str = Query("created_desc", pattern=r"^(deadline_asc|created_desc)$"),
-    limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> list[TaskResponse]:
-    stmt = select(Task).where(Task.user_id == current_user.id)
-
+def _apply_task_list_filters(
+    stmt,
+    *,
+    status: str | None,
+    source: str | None,
+    deadline_from: date | None,
+    deadline_to: date | None,
+):
     if status:
         stmt = stmt.where(Task.status == status)
     if deadline_from:
@@ -96,7 +90,40 @@ async def list_tasks(
         stmt = stmt.join(SourceDocument, Task.source_doc_id == SourceDocument.id).where(
             SourceDocument.source_type == source
         )
+    return stmt
 
+
+async def _count_filtered_tasks(db: AsyncSession, user_id: UUID, **filters) -> int:
+    stmt = select(Task).where(Task.user_id == user_id)
+    stmt = _apply_task_list_filters(stmt, **filters)
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    return int((await db.execute(count_stmt)).scalar_one() or 0)
+
+
+@router.get("", response_model=list[TaskResponse])
+async def list_tasks(
+    response: Response,
+    status: str | None = Query(None, pattern=r"^(pending|confirmed|dismissed)$"),
+    source: str | None = Query(None, pattern=r"^(gmail|drive|upload)$"),
+    deadline_from: date | None = Query(None),
+    deadline_to: date | None = Query(None),
+    sort: str = Query("created_desc", pattern=r"^(deadline_asc|created_desc)$"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[TaskResponse]:
+    filters = {
+        "status": status,
+        "source": source,
+        "deadline_from": deadline_from,
+        "deadline_to": deadline_to,
+    }
+    total = await _count_filtered_tasks(db, current_user.id, **filters)
+    response.headers["X-Total-Count"] = str(total)
+
+    stmt = select(Task).where(Task.user_id == current_user.id)
+    stmt = _apply_task_list_filters(stmt, **filters)
     if sort == "deadline_asc":
         stmt = stmt.order_by(Task.deadline.asc().nulls_last(), Task.created_at.desc())
     else:

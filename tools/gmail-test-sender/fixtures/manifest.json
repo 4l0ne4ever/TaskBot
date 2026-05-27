@@ -1,0 +1,122 @@
+{
+  "hc01_proposal_draft": {
+    "category": "high_confidence",
+    "subject": "Task for you: Henderson proposal draft (due 2026-06-10)",
+    "body_file": "high_confidence/hc01_proposal_draft.txt",
+    "notes": "Clear owner (Emily), exact deadline, single deliverable — auto-confirm candidate"
+  },
+  "hc02_market_research": {
+    "category": "high_confidence",
+    "subject": "Task for you: Compile Q2 market research (due 12/06/2026)",
+    "body_file": "high_confidence/hc02_market_research.txt",
+    "notes": "VN work email; named assignee + datetime"
+  },
+  "hc03_bugfix_login": {
+    "category": "high_confidence",
+    "subject": "Task for you: Fix login timeout #4821 (due 2026-06-14)",
+    "body_file": "high_confidence/hc03_bugfix_login.txt",
+    "notes": "Engineering ticket style"
+  },
+  "hc04_launch_slides": {
+    "category": "high_confidence",
+    "subject": "Task for you: Beta launch slides (due 2026-06-20 15:00)",
+    "body_file": "high_confidence/hc04_launch_slides.txt",
+    "notes": "Delegation template pattern (Flodesk / alfred_ style)"
+  },
+  "hc05_compliance_form": {
+    "category": "high_confidence",
+    "subject": "Task for you: Submit signed Q2 attestation (due 2026-06-18)",
+    "body_file": "high_confidence/hc05_compliance_form.txt",
+    "notes": "Compliance with named signer"
+  },
+  "hc06_vendor_contract": {
+    "category": "high_confidence",
+    "subject": "Task for you: Review Acme vendor contract (due 16/06/2026 09:00)",
+    "body_file": "high_confidence/hc06_vendor_contract.txt",
+    "notes": "VN procurement assignment"
+  },
+  "hc07_faq_update": {
+    "category": "high_confidence",
+    "subject": "Task for you: Update onboarding FAQ (due 2026-06-11)",
+    "body_file": "high_confidence/hc07_faq_update.txt",
+    "notes": "Confluence/doc task"
+  },
+  "hc08_interview_synthesis": {
+    "category": "high_confidence",
+    "subject": "Task for you: Interview synthesis — checkout study (due 2026-06-25)",
+    "body_file": "high_confidence/hc08_interview_synthesis.txt",
+    "notes": "UX research deliverable"
+  },
+  "hc09_expense_recon": {
+    "category": "high_confidence",
+    "subject": "Task for you: May expense reconciliation (due 2026-06-09 18:00)",
+    "body_file": "high_confidence/hc09_expense_recon.txt",
+    "notes": "Finance close task"
+  },
+  "hc10_hotfix_deploy": {
+    "category": "high_confidence",
+    "subject": "Task for you: Deploy hotfix v2.4.1 (due 22/06/2026 10:00)",
+    "body_file": "high_confidence/hc10_hotfix_deploy.txt",
+    "notes": "SRE deployment with rollback owner"
+  },
+  "nm01_fyi_all_hands": {
+    "category": "normal",
+    "subject": "FYI: All-hands deck finalized",
+    "body_file": "normal/nm01_fyi_all_hands.txt",
+    "notes": "Informational only — should abstain or no task"
+  },
+  "nm02_vague_dashboard": {
+    "category": "normal",
+    "subject": "Re: dashboard metrics refresh",
+    "body_file": "normal/nm02_vague_dashboard.txt",
+    "notes": "Vague deadline (end of week), weak assignee"
+  },
+  "nm03_vague_sprint_review": {
+    "category": "normal",
+    "subject": "Sprint review slides — tuần tới",
+    "body_file": "normal/nm03_vague_sprint_review.txt",
+    "notes": "VN vague; group assignee"
+  },
+  "nm04_progress_ping": {
+    "category": "normal",
+    "subject": "Checking in: Henderson proposal status",
+    "body_file": "normal/nm04_progress_ping.txt",
+    "notes": "Status ping, not a new assignment"
+  },
+  "nm05_thread_update_reassign": {
+    "category": "normal",
+    "subject": "Re: Q2 compliance report — ownership change",
+    "body_file": "normal/nm05_thread_update_reassign.txt",
+    "notes": "Update: marker + reassignment — thread_update conflict candidate"
+  },
+  "nm06_thread_vn_reassign": {
+    "category": "normal",
+    "subject": "Re: Release notes v3.0 — reassignment",
+    "body_file": "normal/nm06_thread_vn_reassign.txt",
+    "notes": "Đã đổi / Thay vì — VN thread_update"
+  },
+  "nm07_newsletter_noise": {
+    "category": "normal",
+    "subject": "The Batch — weekly AI newsletter",
+    "body_file": "normal/nm07_newsletter_noise.txt",
+    "notes": "Newsletter noise — abstain"
+  },
+  "nm08_unassigned_action_list": {
+    "category": "normal",
+    "subject": "Stand-up action items (self-assign)",
+    "body_file": "normal/nm08_unassigned_action_list.txt",
+    "notes": "Multiple items, TBD owners, ASAP"
+  },
+  "nm09_soft_feedback_no_task": {
+    "category": "normal",
+    "subject": "Re: your draft — minor comments",
+    "body_file": "normal/nm09_soft_feedback_no_task.txt",
+    "notes": "Feedback only, no hard deadline"
+  },
+  "nm10_hr_training_reminder": {
+    "category": "normal",
+    "subject": "Reminder: complete security training",
+    "body_file": "normal/nm10_hr_training_reminder.txt",
+    "notes": "HR reminder — borderline / low confidence"
+  }
+}

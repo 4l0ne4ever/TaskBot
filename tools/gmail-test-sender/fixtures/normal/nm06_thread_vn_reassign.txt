@@ -1,0 +1,11 @@
+Emily,
+
+Re: mobile app release notes
+
+Minh was originally asked to write release notes for v3.0 by 18/06/2026.
+
+Đã đổi: Thay vì Minh, Emily sẽ viết release notes v3.0; deadline giữ nguyên 18/06/2026.
+
+Emily reply "ack" nếu ok.
+
+— Release manager

@@ -1,0 +1,16 @@
+Emily,
+
+Bug fix assignment — production login timeout (ticket #4821).
+
+Owner: Emily
+Due: 2026-06-14 EOD
+Deliverable: PR merged to staging + short test notes in the ticket.
+
+Steps:
+1. Reproduce on staging with the attached HAR.
+2. Patch root cause (session refresh race).
+3. Request review from Duc by 13/06.
+
+This blocks the 16/06 release train.
+
+— Platform team

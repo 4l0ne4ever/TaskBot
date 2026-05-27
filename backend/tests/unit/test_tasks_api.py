@@ -147,6 +147,7 @@ def test_list_tasks_returns_user_tasks() -> None:
     client = TestClient(_build_app(db, user))
     r = client.get("/tasks")
     assert r.status_code == 200
+    assert r.headers.get("X-Total-Count") == "1"
     data = r.json()
     assert len(data) == 1
     assert data[0]["title"] == "Submit report"

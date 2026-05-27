@@ -126,7 +126,13 @@ def test_normalize_tasks_maps_relative_with_resolved_iso_to_deadline() -> None:
     assert result["normalized_tasks"][0]["deadline"] == "2026-04-10"
 
 
-def test_normalize_tasks_rejects_incomplete_schema() -> None:
+def test_normalize_tasks_keeps_task_when_deadline_v2_missing() -> None:
+    """Graceful degradation (real-world dogfooding finding, 2026-05-26): when the
+    LLM omits ``deadline_v2`` entirely, a task with a valid title must NOT be
+    dropped — it is kept with ``deadline=None`` and a canonical ``type="none"``
+    so it surfaces as a pending item flagged "Missing: deadline". The previous
+    behaviour silently discarded the whole task, amplifying a single field-level
+    LLM omission into total task loss."""
     result = normalize_tasks(
         {
             "extracted_tasks": [
@@ -134,6 +140,32 @@ def test_normalize_tasks_rejects_incomplete_schema() -> None:
                     "title": "Do work",
                     "assignee": "Alice",
                     "priority": "high",
+                }
+            ],
+            "errors": [],
+        }
+    )
+    assert len(result["normalized_tasks"]) == 1
+    t = result["normalized_tasks"][0]
+    assert t["title"] == "Do work"
+    assert t["assignee"] == "Alice"
+    assert t["deadline"] is None
+    assert t["deadline_v2"]["type"] == "none"
+    assert t["deadline_v2"]["iso"] is None
+
+
+def test_normalize_tasks_still_drops_task_with_invalid_title() -> None:
+    """The title guardrail is unchanged: a task with no usable title is
+    meaningless and must still be dropped (with an error logged). Graceful
+    degradation rescues missing *deadlines*, not missing *titles*."""
+    result = normalize_tasks(
+        {
+            "extracted_tasks": [
+                {
+                    "title": "   ",
+                    "assignee": "Alice",
+                    "deadline_v2": {"iso": "2026-04-03", "confidence": 0.9, "source": "llm"},
+                    "confidence": 0.9,
                 }
             ],
             "errors": [],
@@ -213,9 +245,10 @@ def test_normalize_tasks_coerces_partial_deadline_v2_from_llm() -> None:
     assert t["deadline_v2"]["end"] is None
 
 
-def test_normalize_tasks_still_rejects_invalid_confidence() -> None:
-    """Unsalvageable inputs must still be rejected. Confidence outside [0,1]
-    is a hard schema violation we cannot safely coerce."""
+def test_normalize_tasks_discards_unsalvageable_deadline_but_keeps_task() -> None:
+    """An unsalvageable deadline (confidence outside [0,1]) is still NOT trusted —
+    but under graceful degradation the bad deadline is discarded (``deadline=None``,
+    ``type="none"``) rather than throwing away the whole valid-title task."""
     result = normalize_tasks(
         {
             "extracted_tasks": [
@@ -232,10 +265,16 @@ def test_normalize_tasks_still_rejects_invalid_confidence() -> None:
             "errors": [],
         }
     )
-    assert result["normalized_tasks"] == []
+    assert len(result["normalized_tasks"]) == 1
+    t = result["normalized_tasks"][0]
+    assert t["title"] == "Finish task"
+    assert t["deadline"] is None
+    assert t["deadline_v2"]["type"] == "none"
 
 
-def test_normalize_tasks_still_rejects_unparseable_iso() -> None:
+def test_normalize_tasks_discards_unparseable_iso_but_keeps_task() -> None:
+    """Same contract for an unparseable ``iso``: the bad date is dropped, the
+    valid-title task survives as a pending item with no deadline."""
     result = normalize_tasks(
         {
             "extracted_tasks": [
@@ -252,7 +291,11 @@ def test_normalize_tasks_still_rejects_unparseable_iso() -> None:
             "errors": [],
         }
     )
-    assert result["normalized_tasks"] == []
+    assert len(result["normalized_tasks"]) == 1
+    t = result["normalized_tasks"][0]
+    assert t["title"] == "Finish task"
+    assert t["deadline"] is None
+    assert t["deadline_v2"]["type"] == "none"
 
 
 def test_normalize_tasks_passes_week_offset_through_coercion() -> None:

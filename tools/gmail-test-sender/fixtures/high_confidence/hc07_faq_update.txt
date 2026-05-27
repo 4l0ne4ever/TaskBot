@@ -1,0 +1,14 @@
+Emily,
+
+Action: Update the onboarding FAQ page in Confluence.
+
+Owner: Emily
+Due date: 2026-06-11
+Done when: FAQ published, links verified, changelog entry added.
+
+Scope: sections "Billing", "SSO", and "Data export" only (max 2 pages).
+
+Ping #docs-review when ready for sign-off.
+
+Thanks,
+Customer Success
