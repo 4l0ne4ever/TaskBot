@@ -345,6 +345,74 @@ issue and the resolver override. The two fixes (Cerebras strict mode in
 §5.1/§5.2 lineage, resolver short-circuit in §5.4) are independent and both
 contribute. The combination is what the production system needs.
 
+### 5.6 Calendar dispatch architecture — MCP → direct REST pivot (2026-05-30)
+
+After the deadline-extraction bugs were closed out, end-to-end verification on
+the same dogfood account exposed a third independent issue: **0 of 19
+confirmed tasks** had `calendar_event_id` populated, and **0 calls** to the
+calendar dispatch endpoint were visible in agent logs. Direct invocation of
+`async_dispatch_notifications` against a real OAuth token returned `HTTP 404
+Page not found` from the configured MCP endpoint
+`https://gcal.mcp.claude.com/mcp`. The pipeline's `try/except` wrapper kept
+the run alive and the dispatch errors went into `state["errors"]` but did not
+propagate to `pipeline_runs.error_message`, so the failure was invisible at
+the DB-run level — a silent runtime gap behind passing unit/E2E tests, which
+mocked the dispatch.
+
+**Decision: pivot from the MCP shim to direct Google Calendar REST v3 via
+`httpx`.** Three considerations made this the smaller change:
+
+- The MCP endpoint is dead and not under our control to fix.
+- `google-api-python-client` was not installed in the agent image; adding it
+  would introduce a new auth pattern (`google.oauth2.credentials.Credentials`)
+  that diverges from the rest of the codebase.
+- `httpx.AsyncClient` is already the agent's standard HTTP layer (used by
+  every other MCP client), and Google Calendar's REST API accepts the same
+  OAuth bearer token already issued for Gmail and Drive sync.
+
+**Implementation:** `agent/app/mcp/calendar_client.py` was rewritten to
+`POST`/`PATCH` directly against
+`https://www.googleapis.com/calendar/v3/calendars/primary/events`. The class
+name `CalendarMCPClient` was deliberately preserved — `notification_service`,
+the calendar-resync queue worker in `queue_consumer.py`, and four existing
+mock tests all reference it by that name; renaming would force test churn for
+zero behavioural gain. `create_event`/`update_event` signatures were kept
+identical so callers are unchanged. Error semantics are preserved by
+embedding the status code in the `RuntimeError` message
+(`"Google Calendar {op} failed [{status}]: {body}"`) — the existing
+`"403" in str(exc)` detector in `notification_service` and the
+auth-revoked-or-403 check in `_process_calendar_resync_job` continue to work
+without modification.
+
+**All-day events.** `tasks.deadline` is stored as `DATE` (no time component),
+so every event is sent as all-day. Google Calendar's all-day contract uses
+an *exclusive* end date, so a deadline of 2026-06-20 becomes
+`start={"date":"2026-06-20"}`, `end={"date":"2026-06-21"}`. Time-of-day
+extraction (e.g. "5 PM ICT") and timezone normalisation are documented as
+future work in §7.
+
+**OAuth scopes** already included `https://www.googleapis.com/auth/calendar.events`
+in the `SCOPES` list (`backend/app/services/auth_service.py:26`), and the
+dogfood user's token had been issued with that scope, so no consent flow
+change or re-login was required.
+
+**Verified end-to-end on 2026-05-30.** Mass-dispatched the 13
+confirmed-with-deadline tasks from the post-fix dogfood — 13 real Google
+Calendar events created, 0 errors, all `calendar_event_id` and
+`notification_sent` columns populated. A second pass re-dispatching the same
+task IDs exercised the `update_event` (PATCH) path — also 13/13 successful,
+confirming the idempotent re-dispatch / calendar-resync flow used by
+`_process_calendar_resync_job` after a conflict merge. The 6 confirmed
+tasks **without** events all lacked deadlines — those are correctly routed
+to the `in_app_reminder` path by `notification_service`, not skipped.
+
+**Unit tests** (`agent/tests/unit/test_calendar_client_direct_api.py`,
++8 tests): all-day body shape, exclusive-end-date contract including month
+and year boundaries, bearer-header presence, error-message status-code
+embedding for the 403/401 detectors, response-id fallback. Full gate after
+this change: **486 pass** (was 478; +8), 0 regressions, no changes to
+`notification_service.py` or any other caller.
+
 ---
 
 ## 6. Cross-reference: scaled extraction quality
