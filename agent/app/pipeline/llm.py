@@ -62,8 +62,35 @@ def _cerebras_configured() -> bool:
     return bool(key and str(key).strip())
 
 
+_CEREBRAS_STRICT_DEPRECATION_WARNED = False
+
+
 def _cerebras_only() -> bool:
-    return (os.getenv("EVAL_CEREBRAS_ONLY") or "").strip().lower() in {"1", "true", "yes", "on"}
+    """Strict Cerebras-only mode — no fallback, raise on exhaustion.
+
+    Reads two env vars (production-grade name preferred, eval-historical name
+    accepted for backward compatibility):
+
+    - ``LLM_STRICT_PRIMARY=cerebras`` (preferred, production-friendly name)
+    - ``EVAL_CEREBRAS_ONLY=1`` (legacy, originally added for eval strict mode;
+      still honored so existing eval scripts / pinned measurements keep working)
+
+    A one-shot deprecation warning is emitted the first time only the legacy
+    name is set, so the rename is discoverable without breaking anything.
+    """
+    global _CEREBRAS_STRICT_DEPRECATION_WARNED
+    new_form = (os.getenv("LLM_STRICT_PRIMARY") or "").strip().lower()
+    old_form = (os.getenv("EVAL_CEREBRAS_ONLY") or "").strip().lower()
+    new_on = new_form == "cerebras"
+    old_on = old_form in {"1", "true", "yes", "on"}
+    if old_on and not new_on and not _CEREBRAS_STRICT_DEPRECATION_WARNED:
+        import logging
+        logging.getLogger(__name__).warning(
+            "EVAL_CEREBRAS_ONLY is deprecated; use LLM_STRICT_PRIMARY=cerebras. "
+            "The legacy var still works for now."
+        )
+        _CEREBRAS_STRICT_DEPRECATION_WARNED = True
+    return new_on or old_on
 
 
 def _get_cerebras_client() -> Any:
@@ -489,6 +516,108 @@ def _create(
     return content or "[]"
 
 
+_CEREBRAS_STRICT_RETRY_DELAYS: tuple[float, ...] = (1.0, 2.0, 4.0)
+
+
+def _call_cerebras_strict(
+    prompt: str,
+    temperature: float,
+    *,
+    system_prompt: str,
+    max_tokens: int | None,
+) -> str:
+    """Cerebras-only with retry+backoff, **no fallback**.
+
+    Used when ``LLM_STRICT_PRIMARY=cerebras`` (or legacy ``EVAL_CEREBRAS_ONLY=1``)
+    is set — production quality-first mode and the eval-strict pinned mode share
+    this path. The trade-off (quality > availability) is explicit: a real
+    Cerebras outage propagates as a sync failure rather than silently degrading
+    to a weaker fallback model whose date-extraction quality is worse on
+    weekday+date formats (see ``tests/e2e/real-world-validation.md`` §5).
+
+    Retry policy:
+
+    - **Transient buckets** (TPM / RPM, classified by ``_classify_rate_limit``):
+      up to 3 backoff retries with delays ``_CEREBRAS_STRICT_RETRY_DELAYS``
+      (1s, 2s, 4s = ≤7s total). A server-supplied wait hint from
+      ``_wait_from_error`` takes precedence when larger.
+    - **Daily buckets** (TPD / RPD): raised immediately — retries are wasted
+      because daily quotas don't reset until the next UTC day.
+    - **Non-rate-limit errors**: raised immediately.
+
+    Provenance is recorded once per call (with ``rate_limited=True`` if any
+    attempt saw a 429, even on eventual success).
+    """
+    cerebras_model = settings.cerebras_model
+    client = _get_cerebras_client()
+    saw_rate_limit = False
+    last_exc: BaseException | None = None
+    # Attempt count = 1 immediate + len(delays) retries = 4 total at most.
+    for attempt, delay in enumerate((0.0,) + _CEREBRAS_STRICT_RETRY_DELAYS):
+        if delay:
+            time.sleep(delay)
+        try:
+            out = _create(
+                cerebras_model,
+                prompt,
+                temperature,
+                tier="cerebras",
+                system_prompt=system_prompt,
+                max_tokens=max_tokens,
+                _client_override=client,
+            )
+            _record_provenance(
+                CallRecord(model=cerebras_model, is_fallback=False, rate_limited=saw_rate_limit)
+            )
+            return out
+        except Exception as exc:
+            last_exc = exc
+            if not _is_rate_limit(exc):
+                # Non-rate-limit failure — no retry path can help.
+                raise
+            saw_rate_limit = True
+            kind = _classify_rate_limit(str(exc))
+            record_llm_call(
+                model=cerebras_model,
+                model_tier="cerebras",
+                latency_ms=0,
+                error=str(exc)[:300],
+                rate_limit_kind=kind,
+                call_context=_call_context.get(),
+            )
+            if kind in {"tpd", "rpd"}:
+                # Daily quota — retrying in-process is guaranteed waste.
+                _record_provenance(
+                    CallRecord(
+                        model=cerebras_model,
+                        is_fallback=False,
+                        rate_limited=True,
+                        error=str(exc)[:200],
+                    )
+                )
+                raise
+            # Transient bucket — honour server hint when larger than next delay.
+            hint = _wait_from_error(str(exc))
+            next_idx = attempt  # delay we just slept; tuple is (0.0,) + delays
+            if next_idx < len(_CEREBRAS_STRICT_RETRY_DELAYS):
+                planned = _CEREBRAS_STRICT_RETRY_DELAYS[next_idx]
+                if hint > planned:
+                    # Replace the next delay with the server-suggested wait,
+                    # capped so a misbehaving hint can't stall the pipeline.
+                    time.sleep(min(hint, 30.0) - planned)
+    # All retries exhausted while still rate-limited.
+    _record_provenance(
+        CallRecord(
+            model=cerebras_model,
+            is_fallback=False,
+            rate_limited=True,
+            error=str(last_exc)[:200] if last_exc else None,
+        )
+    )
+    assert last_exc is not None  # loop only exits via return or raise; guard for type-checkers
+    raise last_exc
+
+
 def _call_groq_route(
     prompt: str,
     temperature: float,
@@ -650,33 +779,15 @@ def call_llm(
     gemini_only = (os.getenv("EVAL_GEMINI_ONLY") or "").strip().lower() in {"1", "true", "yes", "on"}
 
     if _cerebras_configured() and _cerebras_only():
-        cerebras_model = settings.cerebras_model
-        try:
-            out = _create(
-                cerebras_model,
-                prompt,
-                temperature,
-                tier="cerebras",
-                system_prompt=system_prompt,
-                max_tokens=max_tokens,
-                _client_override=_get_cerebras_client(),
-            )
-        except Exception as exc:
-            if _is_rate_limit(exc):
-                record_llm_call(
-                    model=cerebras_model,
-                    model_tier="cerebras",
-                    latency_ms=0,
-                    error=str(exc)[:300],
-                    rate_limit_kind=_classify_rate_limit(str(exc)),
-                    call_context=_call_context.get(),
-                )
-                _record_provenance(
-                    CallRecord(model=cerebras_model, is_fallback=False, rate_limited=True, error=str(exc)[:200])
-                )
-            raise
-        _record_provenance(CallRecord(model=cerebras_model, is_fallback=False, rate_limited=False))
-        return out
+        # Strict primary mode (production quality-first + eval pinned mode share
+        # this path). Retry+backoff for transient buckets; raise on TPD/RPD or
+        # non-rate-limit errors; never fall back. See ``_call_cerebras_strict``.
+        return _call_cerebras_strict(
+            prompt,
+            temperature,
+            system_prompt=system_prompt,
+            max_tokens=max_tokens,
+        )
 
     if gem and strict and gemini_only:
         try:

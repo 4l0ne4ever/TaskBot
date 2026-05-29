@@ -196,10 +196,18 @@ an unresolved sampling wobble worth noting but not over-interpreting.
 
 ### 5.3 What this means for the thesis claims
 
-- **`temporal_resolve.py` and the extraction prompt are confirmed clean.** The
-  synthetic-eval 0.901 deadline-exact transfers to real email under primary-only
-  conditions. The "58% deadline accuracy" from the first dogfood was a
-  **degraded-provider artifact**, not a stable system property.
+> **Correction (2026-05-29):** the original wording of this section ("`temporal_resolve.py`
+> and the extraction prompt are confirmed clean") was based on the §5.2 pinned
+> measurement which turned out to have a measurement artifact — see §5.4. The
+> resolver in fact had a deterministic override bug that the measurement script
+> happened to bypass. The corrected claim is preserved below for honesty about
+> the diagnostic arc.
+
+- **Provider-fallback is one degradation cause, not the only one.** Pinning to
+  Cerebras eliminates fallback contamination (verified end-to-end: 33/33 calls
+  during the post-fix re-sync hit Cerebras, 0 fallback). But pinning alone did
+  **not** restore deadline accuracy on the original 7 problem emails — see §5.4
+  for the second cause and its fix.
 - **Production extraction quality is bounded by the weakest model in the active
   chain.** This is Rule 4's prophecy (eval strict mode forbids fallback) now
   observed in production. Two operational stances are defensible: pin to the
@@ -215,6 +223,127 @@ The diagnostic and measurement scripts are committed at
 `agent/scripts/replay_dogfood_diag.py` and
 `agent/scripts/measure_extraction_variance.py` so any reviewer can reproduce
 the arc.
+
+### 5.4 Resolver-level override bug (2026-05-29 production re-sync)
+
+After Layer 1+2 (provider pinning + retry-with-backoff, `LLM_STRICT_PRIMARY=cerebras`)
+was deployed, a fresh dogfood re-sync was expected to deliver the
+pinned-measurement quality (§5.2: 100% deadline-exact) on the live pipeline.
+It did not. Provider mix was clean — 33 calls Cerebras, 0 fallback — yet
+**7 of 13 deadline-bearing emails still resolved wrong**, on exactly the same
+formats and the same off-by-many-days "next-weekday-after-anchor" pattern that
+had been blamed on fallback contamination.
+
+Targeted replay with **production-shaped state** (`metadata={"sent_at": "2026-05-23T..."}`
+mirroring what Gmail sync provides — script:
+`agent/scripts/targeted_replay_resolver_check.py`) dumped the intermediate
+`deadline_v2` shape pre- and post-resolver:
+
+| email | LLM-emitted | post-resolver | verdict |
+|---|---|---|---|
+| Beta slides (`"Friday, 20 June 2026"`) | `phrase_class='absolute'`, `iso='2026-06-20'` | `iso='2026-05-29'` | resolver overrode by next-Friday-after-anchor |
+| Henderson (`"Tuesday, 10 June 2026"`) | `'absolute'`, `'2026-06-10'` | `'2026-05-26'` | resolver overrode by next-Tuesday-after-anchor |
+| Confirm receipt (`"Monday 9 June"`) | `'absolute'`, `'2026-06-09'` | `'2026-05-25'` | resolver overrode by next-Monday-after-anchor |
+| Acme vendor (`"trước 09:00 ngày 16/06/2026"`) | `'absolute'`, `'2026-06-16'` | `'2026-05-23'` (=anchor) | resolver matched `(\d+)\s*ngày` on the time-prefix `"00 ngày"` and returned `anchor + 0 days` |
+
+**The pinned measurement masked this.** `measure_extraction_variance.py` built
+its state with `metadata={}` → `sent_at=None` → `anchor=None`, and
+`enrich_deadline_v2_with_symbolic_iso` returns early when `anchor is None`. The
+V1 fallback path (where the weekday-consistency gate and VN `"(\d+)\s*ngày"`
+detector live) therefore **never ran during the measurement** — only the LLM's
+emitted ISO survived, which is correct. Production has `anchor` populated from
+the Gmail message's sent date, so the V1 path runs and overrides.
+
+Two distinct override bugs were firing on the same emails:
+
+1. **Weekday-consistency gate** triggered when the source text contains a
+   weekday label that disagrees with the actual day-of-week of the emitted
+   iso. The fixture-author had written `"Friday, 20 June 2026"` but
+   2026-06-20 is a Saturday — and the same is true for the Henderson
+   "Tuesday 10 June" (actually a Wednesday) and Confirm receipt "Monday 9
+   June" (actually a Tuesday). The gate dutifully "corrected" the iso to
+   the next instance of the labelled weekday after the anchor, producing
+   a date weeks in the past. This same failure mode applies to any real
+   email where the writer mislabels the weekday — common in informal
+   English correspondence.
+2. **VN closed-set detector** matched `(\d+)\s*ngày` against the substring
+   `"00 ngày"` of `"trước 09:00 ngày 16/06/2026"` — i.e. the `00` of the
+   time prefix `09:00` followed immediately by ` ngày`. With no word-boundary
+   isolation between time and date, the regex returned `n=0` and
+   `anchor + 0` days.
+
+Both gates were originally designed for **v1-style output (no `phrase_class`)**
+and rescue legitimate LLM arithmetic errors — see existing tests
+`test_weekday_gate_corrects_iso_off_by_one_{vi,en}` and
+`test_non_weekday_symbolic_gate_corrects_existing_iso_for_{tomorrow,n_days}`.
+None of those tests set `phrase_class`. The v2 contract says: when the LLM
+emits `phrase_class="absolute"`, it is asserting "this is a fully-resolved
+calendar date, no symbolic interpretation needed." The fix respects that
+contract surgically:
+
+```python
+# agent/app/pipeline/temporal_resolve.py — added before the V2/V1 dispatch
+if phrase_class == "absolute" and existing_iso:
+    return out
+```
+
+`existing_iso` has already passed the plausibility gate (≤ `_MAX_FUTURE_DAYS`
+from anchor) earlier in the function. An implausible iso is nulled there, so
+this short-circuit only fires for trusted absolutes. The 6 new tests in
+`test_temporal_resolve.py` cover each replay case as a regression fixture plus
+two negative guards (implausible iso still nulled; absent iso still falls
+through to V1 rescue for `phrase_class='absolute'`-with-text-only output).
+
+**Verified on real Gmail re-sync (2026-05-29 13:21–13:26).** Wiped dogfood
+account, agent restarted with both Layer 1+2 and the resolver short-circuit
+live, scheduler re-synced the same 20 emails:
+
+| | before fix | after fix |
+|---|---|---|
+| Beta slides (`Friday 20 June`) | 2026-05-29 | **2026-06-20** ✅ |
+| Henderson draft (`Tuesday 10 June`) | 2026-05-26 | **2026-06-10** ✅ |
+| Confirm receipt (`Monday 9 June`) | 2026-06-01 | **2026-06-09** ✅ |
+| Acme vendor (VN time-prefix) | 2026-05-26 | **2026-06-16** ✅ |
+| Interview synthesis (`Wednesday 25 June`) | 2026-05-27 | **2026-06-25** ✅ |
+| Compile market research Q2 | 2026-05-26 | **2026-06-12** ✅ |
+| Q2 compliance reassignment (`Monday 16/06`) | 2026-06-01 | **2026-06-16** ✅ |
+| **Subtotal** | **7/13 wrong** | **0/13 wrong** |
+| Provider mix during sync | (n/a — pre-Layer 1+2 sync) | 33/33 Cerebras, 0 fallback |
+| Regressions on the 6 previously-correct deadlines | — | **0** |
+| Full test gate | 462 pass (pre this work) | **478 pass** (+10 Cerebras strict, +6 resolver short-circuit) |
+
+The `hc10` deploy-hotfix blind spot (Limitation #4 in §7) is unchanged:
+Cerebras still does not emit a `deadline_v2` for the `Owner:/Due:/Deliverable:/
+Steps:` structured format. With graceful degradation (§5.1), the task surfaces
+as a pending item with `deadline=None` rather than disappearing.
+
+### 5.5 Methodology note for the thesis defence
+
+The arc from §5.1 → §5.4 is the single most useful lesson of the project:
+
+- **Synthetic eval (0.901 Deadline Exact) over-claimed.** The 250-sample eval
+  generated its `sent_at` field synthetically and uniformly — its anchor was
+  always set, but the LLM rarely emitted `phrase_class='absolute'` on the
+  generated phrasings, so the V1 fallback rescues did most of the work in
+  production-shaped configurations. The eval never exercised the
+  absolute-with-text-weekday-mismatch case that real human writing produces.
+- **Pinned variance measurement (100% Deadline Exact) over-claimed too.**
+  Its `metadata={}` shortcut, intended only to avoid plumbing anchor through
+  the harness, in fact bypassed the resolver entirely. The measurement scored
+  the LLM's raw emission, not the system's resolved output.
+- **The real-world dogfood was the first configuration where the LLM, the
+  resolver, and a realistic anchor all ran together on natural-shape text.**
+  That is when the bug showed up. The fix is structurally simple (one
+  conditional, ~30 lines including the docstring) but only *findable* via this
+  arc.
+
+For the defence: this is the kind of finding that strengthens rather than
+weakens the project — measurement infrastructure can mask production bugs as
+effectively as expose them, and the discipline of refusing to declare "done"
+until real-world dogfood agrees is what surfaced both the provider-fallback
+issue and the resolver override. The two fixes (Cerebras strict mode in
+§5.1/§5.2 lineage, resolver short-circuit in §5.4) are independent and both
+contribute. The combination is what the production system needs.
 
 ---
 

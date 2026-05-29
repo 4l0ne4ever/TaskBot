@@ -705,6 +705,33 @@ def enrich_deadline_v2_with_symbolic_iso(
                     out["iso"] = None
                     existing_iso = None
 
+    # ── Trust the LLM's absolute iso once plausibility-validated ──────────────
+    # When the LLM explicitly emits ``phrase_class="absolute"`` (i.e. "this is
+    # a fully-resolved calendar date, no symbolic interpretation needed") and
+    # provides a valid, plausibility-checked iso, the V1 text-pattern fallback
+    # below must not run. Its weekday-consistency / VN "(\d+)\s*ngày" / today /
+    # tomorrow rescues are designed for v1-style output without ``phrase_class``
+    # — running them on absolute output produces catastrophic regressions in
+    # two reproducible ways observed in 2026-05-29 production replay:
+    #
+    #   (1) Text incidentally contains a weekday label that disagrees with the
+    #       iso (e.g. ``"Friday, 20 June 2026"`` where 2026-06-20 is actually a
+    #       Saturday — fixture-author error, or human writer error in real
+    #       email). The weekday-consistency gate then overrides the correct
+    #       calendar date with ``_next_weekday_on_or_after(anchor, friday)``,
+    #       producing a date in the recent past relative to anchor.
+    #   (2) VN text like ``"trước 09:00 ngày 16/06/2026"`` matches
+    #       ``(\d+)\s*ngày`` on the ``"00 ngày"`` substring of the *time*
+    #       prefix, returning ``anchor + 0 days``.
+    #
+    # The text-based phrase_class corrections above (named_weekday / today /
+    # tomorrow / n_days) are already scoped to non-absolute classes, so an
+    # absolute deadline is untouched by them. Every existing rescue test in
+    # ``test_temporal_resolve.py`` exercises V1 fallback *without* phrase_class
+    # — those keep working unchanged.
+    if phrase_class == "absolute" and existing_iso:
+        return out
+
     # ── V2 path: phrase_class present ─────────────────────────────────────────
     if phrase_class and phrase_class not in ("absolute", "named_cultural", "none"):
         params = out.get("phrase_params") or {}

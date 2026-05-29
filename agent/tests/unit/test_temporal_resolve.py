@@ -395,6 +395,110 @@ def test_weekday_gate_preserves_correct_iso():
 
 
 # ---------------------------------------------------------------------------
+# phrase_class="absolute" short-circuit (2026-05-29 production replay finding)
+# ---------------------------------------------------------------------------
+# When the LLM emits ``phrase_class="absolute"`` it is asserting "this is a
+# fully-resolved calendar date". The V1 text-pattern fallback's weekday gate
+# and VN "(\d+)\s*ngày" detector were designed for legacy v1 output without
+# phrase_class and produce catastrophic regressions if allowed to run on
+# absolute output (see the 4 replay cases reproduced below). The
+# short-circuit added in this commit returns the LLM's iso unchanged once
+# the plausibility gate has validated it. Plausibility-failed or missing iso
+# still falls through to the V1 rescue paths.
+
+def test_absolute_iso_preserved_when_text_weekday_mismatches_actual_date():
+    """Replay case: 'Friday, 20 June 2026' from the dogfood fixture. The
+    writer mislabelled the weekday — 2026-06-20 is actually a Saturday —
+    but the calendar date is what matters. Pre-fix, the weekday-consistency
+    gate computed next-Friday-on-or-after the anchor (2026-05-29) and
+    silently overrode 2026-06-20."""
+    anchor = date(2026, 5, 23)
+    d = {
+        "text": "Friday, 20 June 2026, 3:00 PM",
+        "resolved_from": "Friday, 20 June 2026, 3:00 PM",
+        "iso": "2026-06-20",
+        "type": "exact",
+        "phrase_class": "absolute",
+    }
+    out = enrich_deadline_v2_with_symbolic_iso(d, anchor)
+    assert out["iso"] == "2026-06-20"
+
+
+def test_absolute_iso_preserved_for_tuesday_label_off_by_one():
+    """Replay case: 'Tuesday, 10 June 2026' — 2026-06-10 is a Wednesday.
+    The calendar date stays."""
+    anchor = date(2026, 5, 23)
+    d = {
+        "text": "Tuesday, 10 June 2026",
+        "iso": "2026-06-10",
+        "type": "exact",
+        "phrase_class": "absolute",
+    }
+    out = enrich_deadline_v2_with_symbolic_iso(d, anchor)
+    assert out["iso"] == "2026-06-10"
+
+
+def test_absolute_iso_preserved_when_short_text_has_weekday_label():
+    """Replay case: 'Monday 9 June' (short form) — 2026-06-09 is a Tuesday."""
+    anchor = date(2026, 5, 23)
+    d = {
+        "text": "Monday 9 June",
+        "iso": "2026-06-09",
+        "type": "exact",
+        "phrase_class": "absolute",
+    }
+    out = enrich_deadline_v2_with_symbolic_iso(d, anchor)
+    assert out["iso"] == "2026-06-09"
+
+
+def test_absolute_iso_preserved_for_vn_time_prefixed_date():
+    """Replay case: 'trước 09:00 ngày 16/06/2026'. Pre-fix, the legacy
+    closed-set detector's ``(\\d+)\\s*ngày`` regex matched the ``"00 ngày"``
+    substring of the time prefix and returned ``anchor + 0 days``
+    (2026-05-23). With the short-circuit, the LLM's 2026-06-16 is trusted."""
+    anchor = date(2026, 5, 23)
+    d = {
+        "text": "trước 09:00 ngày 16/06/2026",
+        "iso": "2026-06-16",
+        "type": "exact",
+        "phrase_class": "absolute",
+    }
+    out = enrich_deadline_v2_with_symbolic_iso(d, anchor)
+    assert out["iso"] == "2026-06-16"
+
+
+def test_absolute_iso_implausible_still_nulled_by_plausibility_gate():
+    """Guard: the short-circuit only fires AFTER the plausibility gate. An
+    LLM-emitted absolute iso far outside the anchor window is still nulled
+    (so downstream consumers know it was rejected)."""
+    anchor = date(2026, 5, 23)
+    d = {
+        "text": "1 Jan 2099",
+        "iso": "2099-01-01",
+        "type": "exact",
+        "phrase_class": "absolute",
+    }
+    out = enrich_deadline_v2_with_symbolic_iso(d, anchor)
+    assert out["iso"] is None
+
+
+def test_absolute_phrase_class_with_no_iso_falls_through_to_v1():
+    """Guard: when phrase_class='absolute' is set but the LLM didn't emit an
+    iso, the short-circuit must NOT fire — V1 rescue paths still get a
+    chance to construct one from the text."""
+    anchor = date(2026, 5, 23)
+    d = {
+        "text": "trong 3 ngày",
+        "iso": None,
+        "type": "none",
+        "phrase_class": "absolute",
+    }
+    out = enrich_deadline_v2_with_symbolic_iso(d, anchor)
+    # V1's "(\d+)\s*ngày" detector should have rescued anchor + 3 days.
+    assert out["iso"] == "2026-05-26"
+
+
+# ---------------------------------------------------------------------------
 # week_offset: "next" and "after_next" override (D.2 — Q-01 roadmap)
 # ---------------------------------------------------------------------------
 
