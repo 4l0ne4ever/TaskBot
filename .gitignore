@@ -32,3 +32,4 @@ tests/eval/results/*
 !tests/eval/results/.gitkeep
 .claude/
 CLAUDE.md
+SOICT_DATN_Application_VIE_Template/

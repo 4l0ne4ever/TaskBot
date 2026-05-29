@@ -73,15 +73,21 @@ class _FakeScalars:
 
 
 class _FakeResult:
-    def __init__(self, rows=None, one=None):
+    def __init__(self, rows=None, one=None, scalar=None):
         self._rows = rows or []
         self._one = one
+        self._scalar = scalar
 
     def scalars(self):
         return _FakeScalars(self._rows)
 
     def scalar_one_or_none(self):
         return self._one
+
+    def scalar_one(self):
+        # Used by _count_filtered_tasks (SELECT count(*) ...). Returns the
+        # integer count the routing layer computed for this statement.
+        return self._scalar
 
 
 class _FakeDB:
@@ -113,7 +119,10 @@ class _FakeDB:
         else:
             rows = self._tasks
         one = rows[0] if rows else None
-        return _FakeResult(rows=rows, one=one)
+        # A count query (_count_filtered_tasks) wraps the filtered select in a
+        # subquery and asks for scalar_one(); return the row count, not a row.
+        scalar = len(rows) if "count(" in low else one
+        return _FakeResult(rows=rows, one=one, scalar=scalar)
 
     async def delete(self, obj):
         self.deleted.append(obj)

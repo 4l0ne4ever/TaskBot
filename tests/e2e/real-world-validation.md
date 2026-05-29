@@ -1,8 +1,13 @@
 # Real-World Validation — Gmail Dogfooding (Honest Scope)
 
-**Date:** 2026-05-23 · **Account:** primary author inbox (single real Google account)
+**First sync:** 2026-05-23 · **Controlled dogfood + diagnosis + pinned re-measure:** 2026-05-26 → 2026-05-28
+**Account:** primary author inbox (single real Google account)
 **Purpose:** record what TaskBot was validated on against *real* email versus
-*synthetic enterprise* data, so the thesis claims match the evidence exactly.
+*synthetic enterprise* data, so the thesis claims match the evidence exactly —
+including the diagnostic arc that took an alarming first dogfood result
+(58% deadline accuracy, 4/10 high-confidence emails missed) and root-caused it
+to **provider-fallback contamination** plus a deterministic **drop amplifier** in
+`normalize_tasks`, both of which are now addressed (§5).
 
 > **One-line framing for the defense:**
 > Task **extraction** and **abstention** are validated on a real, mixed Gmail
@@ -115,7 +120,105 @@ DATABASE_URL='postgresql+asyncpg://taskbot:taskbot@localhost:55432/taskbot' \
 
 ---
 
-## 5. Cross-reference: scaled extraction quality
+## 5. Controlled 20-email dogfood + provider-fallback diagnosis (2026-05-26 → 28)
+
+A controlled 20-email batch (10 high-confidence + 10 mixed-noise; payloads at
+`tools/gmail-test-sender/fixtures/`) was sent to the dogfood Gmail account and
+processed by the live sync. The first pass surfaced a striking pattern: 18 tasks
+created, **4 high-confidence emails produced zero tasks**, and **5 explicit
+deadlines resolved wrong** (typically collapsing near the received date). The
+synthetic eval scored 0.901 Deadline Exact on the same pipeline, so the gap
+demanded an honest diagnosis, not a hand-wave.
+
+### 5.1 Diagnostic arc — what was actually broken
+
+1. **All 20 emails were synced.** `source_documents` count = 20; every
+   `pipeline_runs.status='completed'` with no `error_message`. Neither sync
+   coverage nor a transient error explains the 4 missing tasks.
+2. **Replay (`agent/scripts/replay_dogfood_diag.py`) showed the symptoms were
+   non-deterministic** — three runs on identical input gave three different
+   outcomes (correct, wrong-deadline, silent-loss). Conclusion: the failure was
+   **LLM non-determinism**, not a deterministic prompt or resolver bug.
+   `temporal_resolve.py` was specifically exonerated — when the LLM emits a
+   well-formed `deadline_v2`, "Friday, 20 June 2026"→06-20, VN "ngày 12/06/2026"
+   →06-12, and "Monday 16/06/2026"→06-16 all resolve correctly.
+3. **Smoking gun:** the replay terminated with
+   `google.genai.errors.ServerError: 503 UNAVAILABLE` **on Gemini** — the
+   *last-resort* fallback. The provider chain is Cerebras → Groq → Gemini, so
+   reaching Gemini means both upper tiers were unavailable for that call.
+4. **A deterministic amplifier was hiding underneath.**
+   `normalize_tasks._normalize_task` returned `None` (discarding the entire
+   task) whenever `_coerce_deadline_v2` returned `None` — i.e., whenever the LLM
+   omitted the `deadline_v2` wrapper or emitted one missing `confidence`. A
+   weaker fallback model is much more likely to produce that shape, so an LLM
+   hiccup on one optional field became 100% task loss. **Fixed** in commit
+   `ef93c67` (see `agent/app/pipeline/nodes/normalize_tasks.py:_empty_deadline_v2`):
+   a valid-title task with missing/unsalvageable `deadline_v2` is now kept with
+   `deadline=None` and `type='none'`, surfacing as a pending item flagged
+   "Missing: deadline" — visible degradation instead of silent loss. Three
+   existing unit tests that encoded the old "drop the whole task" policy were
+   rewritten to assert the new contract; a new test guards the legitimate
+   title-invalid drop. Full gate: **462 tests pass**.
+
+### 5.2 Provider-pinned variance measurement (N=5, Cerebras-only)
+
+Repeating the run with `EVAL_CEREBRAS_ONLY=1`
+(`agent/scripts/measure_extraction_variance.py`) eliminates fallback
+contamination and measures what the *primary* model alone produces. The
+pipeline already records per-call provenance (`CallRecord{model, is_fallback,
+rate_limited}`), so the pinning is verifiable, not asserted:
+
+```
+provenance: 155 LLM calls · 0 fallback fires · 0 rate-limit hits
+            models used: gpt-oss-120b × 155  (100% Cerebras)
+```
+
+| metric | unpinned (full chain) | pinned (Cerebras only) |
+|---|---|---|
+| Deadline-exact among produced tasks | mixed (5 wrong / 12 in first dogfood) | **100% across every email** |
+| Silent drops / 100 runs (post-fix) | 0 | **0** |
+| `nm01` "No action needed" false-positive | 100% | **0%** |
+| `nm07` newsletter false-positive | 0% | 0% |
+| `nm02` / `nm03` vague-soft-ask false-positive | 60–100% | **100% — genuinely borderline** |
+| Cerebras-only extraction wobble | — | most 100%; hc01/hc05 80%, hc10 60% |
+
+Two cells deserve honest call-outs. **`hc03` extracts zero tasks in 3/3 pinned
+verification runs** (3 LLM calls per run — the extract-retry pattern firing on
+empty output): Cerebras has a **reproducible blind spot on hc03's structured
+`Owner:/Due:/Deliverable:/Steps:` format**. In production the fallback chain
+rescues hc03 — Groq or Gemini extracts what Cerebras misses. So fallback is not
+purely "weaker quality": for some inputs it is the recovery mechanism. The
+graceful-degradation fix in §5.1 handles both directions: weaker-model outputs
+no longer destroy tasks, *and* primary-model misses get a second chance via the
+chain. `hc02` extracts identically and correctly in targeted verification
+(3/3 runs, deadline 2026-06-12) but only 1/5 in the larger measurement window —
+an unresolved sampling wobble worth noting but not over-interpreting.
+
+### 5.3 What this means for the thesis claims
+
+- **`temporal_resolve.py` and the extraction prompt are confirmed clean.** The
+  synthetic-eval 0.901 deadline-exact transfers to real email under primary-only
+  conditions. The "58% deadline accuracy" from the first dogfood was a
+  **degraded-provider artifact**, not a stable system property.
+- **Production extraction quality is bounded by the weakest model in the active
+  chain.** This is Rule 4's prophecy (eval strict mode forbids fallback) now
+  observed in production. Two operational stances are defensible: pin to the
+  SLA primary and fail-closed on outage, **or** keep the chain for availability
+  and rely on the per-call provenance for auditability.
+- **Abstention on FYI mail is fine on the primary model** (`nm01` recovers from
+  100%→0% false-positive when fallback is excluded). The over-extraction on
+  vague soft asks (`nm02`/`nm03`) is the **real, isolated** auto-confirm-gate
+  work — deferred to future work pending threshold-sweep evidence (policy
+  Rule 2), but now properly scoped instead of conflated with fallback noise.
+
+The diagnostic and measurement scripts are committed at
+`agent/scripts/replay_dogfood_diag.py` and
+`agent/scripts/measure_extraction_variance.py` so any reviewer can reproduce
+the arc.
+
+---
+
+## 6. Cross-reference: scaled extraction quality
 
 The real-inbox extraction in §2 is the qualitative complement to the quantitative
 250-sample evaluation:
@@ -126,12 +229,13 @@ The real-inbox extraction in §2 is the qualitative complement to the quantitati
 
 Together: the eval shows the extraction is accurate at scale on representative
 synthetic enterprise data; the dogfooding (§2) shows it transfers to real,
-unseen, noisy email; and the automated hero tests (§4) show the enterprise
-features are wired correctly end-to-end.
+unseen, noisy email; §5 isolates the production-time degradation cause; and the
+automated hero tests (§4) show the enterprise features are wired correctly
+end-to-end.
 
 ---
 
-## 6. Honest limitations (for the Future Work chapter)
+## 7. Honest limitations (for the Future Work chapter)
 
 1. **Single real account, single platform.** Real validation used one Gmail
    account with no connected Drive, so cross-platform multi-source conflict was
@@ -142,6 +246,15 @@ features are wired correctly end-to-end.
 3. **No multi-week longitudinal run.** Dogfooding was a point-in-time sync, not
    a sustained deployment; drift, retraction rates over time, and notification
    fatigue are not measured.
-4. **Future work:** deploy to a real enterprise team (the Anna persona — Tech
+4. **Primary-model blind spot (`hc03`).** Cerebras `gpt-oss-120b` deterministically
+   refuses to extract tasks from at least one structured email format
+   (`Owner:/Due:/Deliverable:/Steps:`). In production the fallback chain
+   recovers it; this is a single observed case, not a systematic study.
+5. **Auto-confirm gate on borderline soft asks** (`nm02`/`nm03`-style)
+   over-extracts on the primary model itself. Fixing this needs a policy
+   threshold sweep (Rule 2) on a larger labelled real-noise corpus.
+6. **Future work:** deploy to a real enterprise team (the Anna persona — Tech
    Lead, team of 8) to validate auto-confirm precision, thread-update detection,
-   and multi-source conflict on real cross-platform, multi-author traffic.
+   and multi-source conflict on real cross-platform, multi-author traffic; and
+   measure single-pass vs. self-consistency vs. provider-pinned strategies
+   side-by-side on a multi-week longitudinal trace.
