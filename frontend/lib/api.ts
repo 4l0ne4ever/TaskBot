@@ -142,7 +142,7 @@ export const api = {
       data: Partial<
         Pick<
           Task,
-          "title" | "description" | "assignee" | "deadline" | "deadline_v2" | "priority" | "uncertainty" | "status"
+          "title" | "description" | "assignee" | "deadline" | "deadline_time" | "deadline_v2" | "priority" | "uncertainty" | "status"
         >
       >,
     ) =>

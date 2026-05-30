@@ -22,6 +22,10 @@ export interface Task {
   description: string | null;
   assignee: string | null;
   deadline: string | null;
+  // Round 13 (2026-05-31): "HH:MM:SS" when the source said a time, null
+  // otherwise. UI renders "YYYY-MM-DD HH:MM" when set, "YYYY-MM-DD" when
+  // not — date-only behaviour preserved exactly for legacy rows.
+  deadline_time: string | null;
   deadline_v2: TaskDeadlineV2 | null;
   priority: string | null;
   uncertainty: TaskUncertainty | null;

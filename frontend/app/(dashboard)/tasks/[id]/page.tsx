@@ -24,6 +24,9 @@ export default function TaskDetailPage() {
   const [task, setTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(true);
   const [deadline, setDeadline] = useState("");
+  // Round 13 (2026-05-31): editable time-of-day. Backend stores `HH:MM:SS`,
+  // <input type="time"> wants `HH:MM`, so slice on load and pad on save.
+  const [deadlineTime, setDeadlineTime] = useState("");
   const [description, setDescription] = useState("");
   const [source, setSource] = useState<TaskSource | null>(null);
   const [sourceLoading, setSourceLoading] = useState(false);
@@ -35,6 +38,7 @@ export default function TaskDetailPage() {
       const t = await api.tasks.get(id);
       setTask(t);
       setDeadline(t.deadline ?? "");
+      setDeadlineTime(t.deadline_time ? t.deadline_time.slice(0, 5) : "");
       setDescription(t.description ?? "");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Not found");
@@ -49,7 +53,14 @@ export default function TaskDetailPage() {
   async function saveDeadline() {
     if (!task) return;
     try {
-      await api.tasks.update(task.id, { deadline: deadline.trim() || null });
+      // Round 13: time saved separately. Backend's `<input type="time">`
+      // emits "HH:MM"; widen to "HH:MM:00" so Postgres `TIME` accepts it
+      // unambiguously. Empty time clears the column to null.
+      const t = deadlineTime.trim();
+      await api.tasks.update(task.id, {
+        deadline: deadline.trim() || null,
+        deadline_time: t ? `${t}:00` : null,
+      });
       toast.success("Deadline updated");
       void load();
     } catch (e) {
@@ -139,18 +150,24 @@ export default function TaskDetailPage() {
           <label className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
             Deadline
           </label>
-          <div className="flex gap-2">
-            {/* Native HTML5 date picker — browser-provided calendar UI, no
-                extra dependency. ``Task.deadline`` is already stored as a
-                ``YYYY-MM-DD`` string, which is exactly what
-                ``input type="date"`` consumes and emits, so no value
-                normalization is needed and the existing save handler is
-                untouched. Empty string clears the deadline. */}
+          <div className="flex gap-2 flex-wrap">
+            {/* Native HTML5 date + time pickers. ``Task.deadline`` is stored
+                as ``YYYY-MM-DD`` and ``Task.deadline_time`` as ``HH:MM:SS``
+                — exactly what these inputs consume/emit (the time input
+                wants ``HH:MM``; the save handler pads with ":00"). Either
+                field cleared independently. */}
             <input
               type="date"
               value={deadline}
               onChange={(e) => setDeadline(e.target.value)}
               className="flex-1 min-w-[10rem] bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] [color-scheme:dark]"
+            />
+            <input
+              type="time"
+              value={deadlineTime}
+              onChange={(e) => setDeadlineTime(e.target.value)}
+              title="Optional time of day"
+              className="w-[7rem] bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] [color-scheme:dark]"
             />
             <button
               type="button"

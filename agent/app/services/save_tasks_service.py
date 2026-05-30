@@ -26,6 +26,24 @@ def _parse_deadline(value: object) -> date | None:
         return None
 
 
+def _coerce_deadline_time(value: object) -> "time | None":
+    """Round 13: normalize_tasks emits a ``datetime.time`` (or None) in the
+    ``deadline_time`` field. Pass it through to the Task row unchanged when
+    present, else None. Strings "HH:MM" / "HH:MM:SS" are also accepted in
+    case a caller (test, future API) hands us serialized form."""
+    from datetime import time as _time
+    if value is None:
+        return None
+    if isinstance(value, _time):
+        return value
+    if isinstance(value, str):
+        try:
+            return _time.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
 def _parse_uuid(value: str | None) -> uuid.UUID | None:
     if not value:
         return None
@@ -165,6 +183,7 @@ async def async_save_tasks(state: PipelineState) -> dict:
                         best.assignee = vt.get("assignee") if isinstance(vt.get("assignee"), str) else None
                         best.assignee_canonical = vt.get("assignee_canonical") if isinstance(vt.get("assignee_canonical"), str) else None
                         best.deadline = _parse_deadline(vt.get("deadline"))
+                        best.deadline_time = _coerce_deadline_time(vt.get("deadline_time"))
                         best.deadline_v2 = vt.get("deadline_v2") if isinstance(vt.get("deadline_v2"), dict) else None
                         best.priority = vt.get("priority") if isinstance(vt.get("priority"), str) else None
                         best.uncertainty = vt.get("uncertainty") if isinstance(vt.get("uncertainty"), dict) else None
@@ -194,6 +213,7 @@ async def async_save_tasks(state: PipelineState) -> dict:
                             assignee=vt.get("assignee") if isinstance(vt.get("assignee"), str) else None,
                             assignee_canonical=vt.get("assignee_canonical") if isinstance(vt.get("assignee_canonical"), str) else None,
                             deadline=_parse_deadline(vt.get("deadline")),
+                            deadline_time=_coerce_deadline_time(vt.get("deadline_time")),
                             deadline_v2=vt.get("deadline_v2") if isinstance(vt.get("deadline_v2"), dict) else None,
                             priority=vt.get("priority") if isinstance(vt.get("priority"), str) else None,
                             uncertainty=vt.get("uncertainty") if isinstance(vt.get("uncertainty"), dict) else None,

@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -30,6 +30,10 @@ class TaskResponse(BaseModel):
     description: str | None
     assignee: str | None
     deadline: date | None
+    # Round 13 (2026-05-31): time-of-day component (e.g. "3:00 PM" → 15:00:00)
+    # extracted from the email's verbatim deadline phrase. Null when the
+    # source doesn't specify a time — frontend then renders date-only.
+    deadline_time: time | None = None
     deadline_v2: TaskDeadlineV2 | None = None
     priority: str | None
     uncertainty: TaskUncertainty | None = None
@@ -84,6 +88,7 @@ class TaskUpdate(BaseModel):
     description: str | None = None
     assignee: str | None = None
     deadline: date | None = None
+    deadline_time: time | None = None  # Round 13: editable time-of-day
     deadline_v2: TaskDeadlineV2 | None = None
     priority: str | None = None
     uncertainty: TaskUncertainty | None = None

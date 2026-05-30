@@ -1,8 +1,67 @@
-from datetime import date
+import re
+from datetime import date, time
 
 from app.pipeline.state import PipelineState
 from app.pipeline.temporal_resolve import enrich_deadline_v2_with_symbolic_iso, parse_anchor_date
 from app.services.assignee_resolver import AssigneeResolver, get_default_resolver
+
+
+# Round 13 (2026-05-31) — pull a time-of-day out of the LLM's verbatim
+# deadline phrase (deadline_v2.text). The LLM already extracts the full
+# textual deadline ("Friday, 20 June 2026, 3:00 PM ICT", "trước 17:00 ngày
+# 12/06/2026", "by 9 AM", etc.) but never had a slot to put the time in.
+# Parser is deterministic, no LLM call. Matches:
+#   "3:00 PM"   → 15:00
+#   "3 PM"      → 15:00
+#   "15:00"     → 15:00
+#   "9 AM"      → 09:00
+#   "09:30"     → 09:30
+# Ignores 2-digit numbers that aren't valid times (00-23 hours, 00-59 mins).
+# Picks the FIRST match — most deadline phrases carry one time at most.
+_TIME_PATTERNS = (
+    # H:MM or HH:MM with optional AM/PM (greedy on AM/PM so "9:00 AM" beats "9:00")
+    re.compile(r"\b(\d{1,2}):(\d{2})\s*(am|pm)\b", re.IGNORECASE),
+    # H AM/PM (no minutes) — e.g. "by 5 PM"
+    re.compile(r"\b(\d{1,2})\s*(am|pm)\b", re.IGNORECASE),
+    # 24-hour HH:MM without AM/PM — e.g. "17:00", VN "trước 9:30 ngày..."
+    re.compile(r"\b(\d{1,2}):(\d{2})\b"),
+)
+
+
+def _extract_time_of_day(text: str | None) -> time | None:
+    """Best-effort extract HH:MM from the LLM's deadline_v2.text phrase.
+
+    Returns ``None`` when no plausible time is found — date-only behaviour
+    is preserved exactly for every existing emit.
+    """
+    if not text or not isinstance(text, str):
+        return None
+    low = text.lower()
+    for pattern in _TIME_PATTERNS:
+        m = pattern.search(low)
+        if not m:
+            continue
+        groups = m.groups()
+        hour = int(groups[0])
+        minute = int(groups[1]) if len(groups) >= 2 and groups[1] and groups[1].isdigit() else 0
+        meridiem = ""
+        # Find AM/PM in the matched groups (it's the last one for the
+        # first two patterns, absent for the 24-hour pattern).
+        for g in groups:
+            if isinstance(g, str) and g.lower() in ("am", "pm"):
+                meridiem = g.lower()
+                break
+        if meridiem == "pm" and hour < 12:
+            hour += 12
+        elif meridiem == "am" and hour == 12:
+            hour = 0
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            continue
+        try:
+            return time(hour=hour, minute=minute)
+        except ValueError:
+            continue
+    return None
 
 CANONICAL_DEADLINE_KEYS = (
     "type",
@@ -242,6 +301,12 @@ def _normalize_task(item: dict, anchor: date | None, source_text: str | None = N
 
     deadline = _flat_deadline_from_v2(deadline_v2)
     sanitized_title = _sanitize_title(title.strip(), deadline_v2)
+    # Round 13: pull time-of-day from the LLM's verbatim deadline phrase
+    # (deadline_v2.text). Resolved_from is the fallback when text is empty —
+    # both carry the original "3:00 PM ICT" / "trước 17:00 ngày 12/06/2026"
+    # style string. Result is a ``datetime.time`` or None.
+    dl_phrase = (deadline_v2.get("text") or deadline_v2.get("resolved_from") or "")
+    deadline_time = _extract_time_of_day(dl_phrase) if isinstance(dl_phrase, str) else None
     eq = item.get("evidence_quote")
     evidence_quote = eq.strip() if isinstance(eq, str) and eq.strip() else None
     return {
@@ -250,6 +315,7 @@ def _normalize_task(item: dict, anchor: date | None, source_text: str | None = N
         "assignee": item.get("assignee") if isinstance(item.get("assignee"), str) else None,
         "source_ref": item.get("source_ref") if isinstance(item.get("source_ref"), str) else None,
         "deadline": deadline if isinstance(deadline, str) and _is_iso_date(deadline) else None,
+        "deadline_time": deadline_time,
         "deadline_v2": deadline_v2,
         "priority": _normalize_priority(item.get("priority")),
         "confidence": confidence,

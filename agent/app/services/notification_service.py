@@ -72,6 +72,14 @@ async def async_dispatch_notifications(state: PipelineState) -> dict:
                 if calendar_blocked:
                     notifications_sent.append({"task_id": str(task.id), "type": "calendar_skipped"})
                     continue
+                # Round 13 (2026-05-31): pass deadline_time through so the
+                # calendar client creates a *timed* event (1h duration in
+                # ICT) instead of all-day when the source said a time.
+                time_str = (
+                    task.deadline_time.strftime("%H:%M:%S")
+                    if getattr(task, "deadline_time", None) is not None
+                    else None
+                )
                 try:
                     if task.calendar_event_id:
                         update_resp = await calendar.update_event(
@@ -79,6 +87,7 @@ async def async_dispatch_notifications(state: PipelineState) -> dict:
                             title=task.title,
                             date_iso=date_iso,
                             description=f"Auto-synced task {task.id}",
+                            time_str=time_str,
                         )
                         event_id = str(update_resp.get("event_id") or task.calendar_event_id)
                     else:
@@ -86,6 +95,7 @@ async def async_dispatch_notifications(state: PipelineState) -> dict:
                             title=task.title,
                             date_iso=date_iso,
                             description=f"Task {task.id}",
+                            time_str=time_str,
                         )
                         event_id = str(create_resp.get("event_id") or "")
                     task.calendar_event_id = event_id or task.calendar_event_id

@@ -277,7 +277,18 @@ export default function TasksPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-[var(--muted)]">{t.assignee ?? "—"}</td>
-                    <td className="px-4 py-3 text-[var(--muted)] tabular-nums">{t.deadline ?? "—"}</td>
+                    <td className="px-4 py-3 text-[var(--muted)] tabular-nums whitespace-nowrap">
+                      {t.deadline ? (
+                        <>
+                          {t.deadline}
+                          {t.deadline_time && (
+                            <span className="ml-1 text-[var(--foreground)]">
+                              {t.deadline_time.slice(0, 5)}
+                            </span>
+                          )}
+                        </>
+                      ) : "—"}
+                    </td>
                     <td className="px-4 py-3">
                       <span className="inline-block rounded-full bg-[var(--surface-2)] border border-[var(--border)] text-xs px-2 py-0.5 text-[var(--muted)]">
                         {t.source_type ?? "—"}

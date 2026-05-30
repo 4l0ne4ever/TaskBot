@@ -30,7 +30,7 @@ Both checks see the status code via the formatted ``RuntimeError`` message
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 import httpx
@@ -69,6 +69,38 @@ class CalendarMCPClient:
         return body
 
     @staticmethod
+    def _timed_body(
+        *,
+        title: str,
+        date_iso: str,
+        time_str: str,
+        description: str | None,
+        tz: str = "Asia/Ho_Chi_Minh",
+    ) -> dict[str, Any]:
+        """Round 13 (2026-05-31): when the source said a time-of-day,
+        create a *timed* event instead of all-day. Default duration is one
+        hour (matches "rough reminder of when something is due" semantics —
+        nobody puts a specific end time on "submit by 5 PM"). Timezone
+        defaults to ICT because the dogfood account is Vietnam-based; this
+        is a defensible per-deployment default that the panel can ask about.
+
+        Body shape uses Google Calendar's ``start.dateTime`` + ``timeZone``
+        contract — Google interprets the date-time string in the given
+        timezone.
+        """
+        t = time.fromisoformat(time_str[:8] if len(time_str) >= 8 else time_str)
+        start_dt = datetime.combine(date.fromisoformat(date_iso), t)
+        end_dt = start_dt + timedelta(hours=1)
+        body: dict[str, Any] = {
+            "summary": title,
+            "start": {"dateTime": start_dt.isoformat(timespec="seconds"), "timeZone": tz},
+            "end":   {"dateTime": end_dt.isoformat(timespec="seconds"),   "timeZone": tz},
+        }
+        if description:
+            body["description"] = description
+        return body
+
+    @staticmethod
     def _raise_for_status(resp: httpx.Response, op: str) -> None:
         if resp.is_success:
             return
@@ -88,9 +120,16 @@ class CalendarMCPClient:
         title: str,
         date_iso: str,
         description: str | None = None,
+        time_str: str | None = None,
     ) -> dict[str, Any]:
-        """POST a new all-day event. Returns ``{"event_id": <google-event-id>}``."""
-        body = self._all_day_body(title=title, date_iso=date_iso, description=description)
+        """POST a new event. Timed (``time_str`` set) or all-day (``time_str``
+        None — pre-Round-13 behaviour exactly preserved). Returns
+        ``{"event_id": <google-event-id>}``."""
+        body = (
+            self._timed_body(title=title, date_iso=date_iso, time_str=time_str, description=description)
+            if time_str
+            else self._all_day_body(title=title, date_iso=date_iso, description=description)
+        )
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             resp = await client.post(_CALENDAR_EVENTS_URL, headers=self._headers(), json=body)
         self._raise_for_status(resp, "create_event")
@@ -105,9 +144,15 @@ class CalendarMCPClient:
         title: str,
         date_iso: str,
         description: str | None = None,
+        time_str: str | None = None,
     ) -> dict[str, Any]:
-        """PATCH an existing event (idempotent). Returns ``{"event_id": ...}``."""
-        body = self._all_day_body(title=title, date_iso=date_iso, description=description)
+        """PATCH an existing event (idempotent). Timed or all-day per ``time_str``.
+        Returns ``{"event_id": ...}``."""
+        body = (
+            self._timed_body(title=title, date_iso=date_iso, time_str=time_str, description=description)
+            if time_str
+            else self._all_day_body(title=title, date_iso=date_iso, description=description)
+        )
         url = f"{_CALENDAR_EVENTS_URL}/{event_id}"
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             resp = await client.patch(url, headers=self._headers(), json=body)

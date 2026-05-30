@@ -157,3 +157,85 @@ async def test_end_exclusive_rule_handles_year_boundary(fake_http_client):
     await client.create_event(title="x", date_iso="2026-12-31")
     assert fake_http_client["body"]["start"] == {"date": "2026-12-31"}
     assert fake_http_client["body"]["end"] == {"date": "2027-01-01"}
+
+
+# ---------------------------------------------------------------------------
+# Round 13 (2026-05-31) — timed events when deadline_time is set
+# ---------------------------------------------------------------------------
+# When a task has a time-of-day (e.g. "3:00 PM"), the calendar event should
+# render at that time in the user's local zone rather than as an all-day
+# block. The all-day path (time_str=None) MUST stay byte-identical to the
+# pre-Round-13 behaviour so existing date-only deadlines aren't visually
+# disturbed in users' calendars.
+
+@pytest.mark.asyncio
+async def test_create_event_with_time_uses_datetime_body_and_default_ict_tz(fake_http_client):
+    client = CalendarMCPClient(access_token="tok")
+    out = await client.create_event(
+        title="Submit Q2 report",
+        date_iso="2026-06-20",
+        description="Task abc",
+        time_str="15:00:00",
+    )
+    body = fake_http_client["body"]
+    # No all-day "date" key — the contract is dateTime + timeZone instead.
+    assert "date" not in body["start"]
+    assert "date" not in body["end"]
+    assert body["start"]["dateTime"] == "2026-06-20T15:00:00"
+    assert body["start"]["timeZone"] == "Asia/Ho_Chi_Minh"
+    # Default 1-hour duration so the event is visible on the calendar grid.
+    assert body["end"]["dateTime"] == "2026-06-20T16:00:00"
+    assert body["end"]["timeZone"] == "Asia/Ho_Chi_Minh"
+    assert body["description"] == "Task abc"
+    assert out["event_id"] == "evt-created-xyz"
+
+
+@pytest.mark.asyncio
+async def test_create_event_without_time_keeps_all_day_body_unchanged(fake_http_client):
+    """Regression guard: leaving time_str=None must produce the exact same
+    all-day body the pre-Round-13 contract used."""
+    client = CalendarMCPClient(access_token="tok")
+    await client.create_event(title="x", date_iso="2026-06-20")
+    body = fake_http_client["body"]
+    assert body["start"] == {"date": "2026-06-20"}
+    assert body["end"] == {"date": "2026-06-21"}
+    assert "dateTime" not in body["start"]
+
+
+@pytest.mark.asyncio
+async def test_create_event_handles_evening_time_within_same_day(fake_http_client):
+    """11 PM + 1h = midnight next day — make sure the date math is correct
+    across day boundaries."""
+    client = CalendarMCPClient(access_token="tok")
+    await client.create_event(title="x", date_iso="2026-06-20", time_str="23:00:00")
+    body = fake_http_client["body"]
+    assert body["start"]["dateTime"] == "2026-06-20T23:00:00"
+    assert body["end"]["dateTime"] == "2026-06-21T00:00:00"
+
+
+@pytest.mark.asyncio
+async def test_update_event_with_time_uses_datetime_body(fake_http_client):
+    """Symmetry with create — the calendar-resync path uses update, and a
+    task whose time was set after initial create must flip its existing
+    all-day event into a timed event."""
+    client = CalendarMCPClient(access_token="tok")
+    out = await client.update_event(
+        event_id="existing-evt",
+        title="Renamed",
+        date_iso="2026-06-20",
+        time_str="09:30:00",
+    )
+    body = fake_http_client["body"]
+    assert body["start"]["dateTime"] == "2026-06-20T09:30:00"
+    assert body["end"]["dateTime"] == "2026-06-20T10:30:00"
+    assert out["event_id"] == "evt-updated-xyz"
+
+
+@pytest.mark.asyncio
+async def test_create_event_accepts_hh_mm_without_seconds(fake_http_client):
+    """notification_service emits time as ``HH:MM:SS`` but a UI-direct edit
+    might emit ``HH:MM``. Both must parse — keeps the contract permissive."""
+    client = CalendarMCPClient(access_token="tok")
+    await client.create_event(title="x", date_iso="2026-06-20", time_str="14:30")
+    body = fake_http_client["body"]
+    assert body["start"]["dateTime"] == "2026-06-20T14:30:00"

@@ -1,6 +1,7 @@
 import uuid
+from datetime import time
 
-from sqlalchemy import ARRAY, Boolean, Date, DateTime, ForeignKey, Text, func
+from sqlalchemy import ARRAY, Boolean, Date, DateTime, ForeignKey, Text, Time, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,6 +21,9 @@ class Task(Base):
     assignee: Mapped[str | None] = mapped_column(Text, nullable=True)
     assignee_canonical: Mapped[str | None] = mapped_column(Text, nullable=True, index=False)
     deadline: Mapped[str | None] = mapped_column(Date, nullable=True)
+    # Round 13: time-of-day component. See agent/app/models/task.py for the
+    # full rationale (kept in sync between the two models).
+    deadline_time: Mapped[time | None] = mapped_column(Time, nullable=True)
     deadline_v2: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     priority: Mapped[str | None] = mapped_column(Text, nullable=True)
     uncertainty: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
