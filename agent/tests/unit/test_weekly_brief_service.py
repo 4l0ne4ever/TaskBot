@@ -20,11 +20,13 @@ _TODAY = _NOW.date()
 
 def _task(**kw) -> SimpleNamespace:
     defaults = dict(
+        title="Untitled task",
         status="pending",
         confirmed_by=None,
         deadline=None,
         assignee=None,
         assignee_canonical=None,
+        missing_fields=None,
         created_at=_NOW,  # "this week" by default
     )
     defaults.update(kw)
@@ -101,3 +103,88 @@ def test_render_text_fallback() -> None:
     text = render_brief_text(data)
     assert "TaskBot Weekly Brief" in text
     assert "Lan" in text
+
+
+# ── Round 14: outstanding-items section ──────────────────────────────────
+# Mirrors the daily-digest backlog: pending OR confirmed-with-missing-fields,
+# sorted overdue → due-today → future → no-deadline.
+
+
+def test_build_brief_collects_outstanding_backlog() -> None:
+    tasks = [
+        # confirmed + missing field → counts as outstanding
+        _task(
+            title="Ship landing page",
+            status="confirmed",
+            confirmed_by="user",
+            missing_fields=["deadline"],
+            assignee_canonical="Minh",
+        ),
+        # pending without deadline → counts; sorts last
+        _task(title="Pick demo date", status="pending", assignee_canonical="Lan"),
+        # pending overdue → counts; sorts first
+        _task(
+            title="Refactor consumer",
+            status="pending",
+            deadline=_TODAY - timedelta(days=2),
+            assignee_canonical="Hung",
+        ),
+        # confirmed, no missing fields → NOT outstanding (already handled)
+        _task(
+            title="Already done",
+            status="confirmed",
+            confirmed_by="user",
+            missing_fields=[],
+            deadline=_TODAY + timedelta(days=1),
+        ),
+        # dismissed → excluded (user already triaged)
+        _task(title="Spam", status="dismissed"),
+    ]
+    data = build_brief_data(tasks, [], now=_NOW)
+    assert data["outstanding_total"] == 3
+    titles = [s["title"] for s in data["outstanding_samples"]]
+    # overdue first, then no-deadline (the "missing deadline" item has no
+    # deadline so it sorts after the deadline-bearing rows)
+    assert titles[0] == "Refactor consumer"
+    assert "Ship landing page" in titles
+    assert "Pick demo date" in titles
+    assert "Already done" not in titles
+    assert "Spam" not in titles
+
+
+def test_render_html_includes_outstanding_when_present() -> None:
+    tasks = [
+        _task(title="Pay invoice", status="pending", deadline=_TODAY - timedelta(days=1)),
+    ]
+    data = build_brief_data(tasks, [], now=_NOW)
+    html = render_brief_html(data)
+    assert "Open items needing your attention" in html
+    assert "Pay invoice" in html
+
+
+def test_render_html_omits_outstanding_when_empty() -> None:
+    # Only auto-confirmed + no missing fields → nothing outstanding.
+    tasks = [
+        _task(
+            title="All clear",
+            status="confirmed",
+            confirmed_by="system",
+            missing_fields=[],
+        ),
+    ]
+    data = build_brief_data(tasks, [], now=_NOW)
+    html = render_brief_html(data)
+    assert data["outstanding_total"] == 0
+    assert "Open items needing your attention" not in html
+
+
+def test_render_text_includes_outstanding_with_urgency_markers() -> None:
+    tasks = [
+        _task(title="Late task", status="pending", deadline=_TODAY - timedelta(days=3)),
+        _task(title="Today task", status="pending", deadline=_TODAY),
+    ]
+    data = build_brief_data(tasks, [], now=_NOW)
+    text = render_brief_text(data)
+    assert "Open items needing your attention" in text
+    assert "[OVERDUE]" in text
+    assert "[TODAY]" in text

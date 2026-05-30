@@ -32,6 +32,12 @@ logger = logging.getLogger(__name__)
 WEEKLY_BRIEF_WINDOW_DAYS = 7
 _MAX_CONFLICTS_SHOWN = 10
 _MAX_TEAM_ROWS = 8
+# Round 14 (2026-05-31): the weekly brief used to show only aggregate
+# counters ("Need review: 5") without naming which tasks needed action.
+# Anna's feedback: she wants to *see* the backlog in the email so she can
+# triage from her inbox without opening the dashboard. Mirrors the
+# Round-12 outstanding section in ``daily_digest_service``.
+_MAX_OUTSTANDING_TASKS_SHOWN = 20
 
 
 def _as_date(value: Any) -> date | None:
@@ -62,6 +68,10 @@ def build_brief_data(
     due_this_week = 0
 
     team: dict[str, dict[str, int]] = {}
+    # Round 14: collect the actual backlog rows (pending OR
+    # confirmed-with-missing-fields) so the email can show *what* needs
+    # attention, not just *how many*. Sorted by urgency before truncation.
+    outstanding_all: list[dict[str, Any]] = []
 
     for t in tasks:
         created = t.created_at
@@ -97,6 +107,24 @@ def build_brief_data(
             if dl is not None and dl < today:
                 row["overdue"] += 1
 
+        # Round 14: backlog candidate? Matches the Daily Digest definition:
+        # pending OR confirmed-with-any-missing-field. Dismissed already
+        # short-circuited above, so we don't have to re-check here.
+        missing = list(getattr(t, "missing_fields", None) or [])
+        needs_attention = (
+            t.status == "pending"
+            or (t.status == "confirmed" and len(missing) > 0)
+        )
+        if needs_attention:
+            title = getattr(t, "title", None) or "(untitled)"
+            outstanding_all.append({
+                "title": title,
+                "status": t.status,
+                "assignee": name or None,
+                "deadline": dl.isoformat() if dl else None,
+                "missing": missing,
+            })
+
     open_conflicts = [c for c in conflicts if not c.resolved]
     team_rows = sorted(
         ({"assignee": k, **v} for k, v in team.items()),
@@ -105,6 +133,25 @@ def build_brief_data(
     )[:_MAX_TEAM_ROWS]
 
     auto_rate = round(auto_confirmed_week / new_this_week, 4) if new_this_week else 0.0
+
+    # Round 14: sort outstanding by urgency — overdue → due today → future →
+    # no-deadline (each bucket sorted by date asc). Same key as the daily
+    # digest so the two emails feel consistent.
+    today_iso = today.isoformat()
+
+    def _urgency_key(item: dict[str, Any]) -> tuple:
+        dl = item.get("deadline")
+        if dl is None:
+            return (3, "")
+        if dl < today_iso:
+            return (0, dl)
+        if dl == today_iso:
+            return (1, dl)
+        return (2, dl)
+
+    outstanding_all.sort(key=_urgency_key)
+    outstanding_samples = outstanding_all[:_MAX_OUTSTANDING_TASKS_SHOWN]
+    outstanding_total = len(outstanding_all)
 
     return {
         "period_start": window_start.date().isoformat(),
@@ -126,6 +173,10 @@ def build_brief_data(
             for c in open_conflicts[:_MAX_CONFLICTS_SHOWN]
         ],
         "team": team_rows,
+        # Round 14: the actual backlog, age-agnostic. Used by the new
+        # "Open items needing your attention" section in the email.
+        "outstanding_total": outstanding_total,
+        "outstanding_samples": outstanding_samples,
     }
 
 
@@ -193,11 +244,14 @@ def render_brief_html(data: dict[str, Any]) -> str:
     else:
         team_html = "<p style='color:#6b7280'>No assigned tasks.</p>"
 
+    outstanding_html = _render_outstanding_html(data)
+
     return f"""\
 <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:640px;margin:0 auto;color:#111827">
   <h2 style="margin-bottom:2px">TaskBot Weekly Brief</h2>
   <p style="color:#6b7280;margin-top:0">{_e(data['period_start'])} → {_e(data['period_end'])}</p>
   {stats_row}
+  {outstanding_html}
   <h3 style="margin-top:24px;margin-bottom:4px">Open conflicts</h3>
   {conflicts_html}
   <h3 style="margin-top:24px;margin-bottom:4px">Team workload</h3>
@@ -206,6 +260,76 @@ def render_brief_html(data: dict[str, Any]) -> str:
     Sent by TaskBot. Reply STOP semantics not applicable — this is your own digest.
   </p>
 </div>"""
+
+
+def _render_outstanding_html(data: dict[str, Any]) -> str:
+    """Round-14 backlog table — what still needs the user's attention.
+
+    Renders the same urgency-tinted rows the Daily Digest uses, so the two
+    emails share a visual idiom. Empty backlog → empty string (no "clean
+    slate" copy here; the stats row already conveys it).
+    """
+    total = int(data.get("outstanding_total") or 0)
+    samples = data.get("outstanding_samples") or []
+    if not samples:
+        return ""
+    today_iso = data.get("period_end", "")
+    rows = ""
+    for s in samples:
+        dl = s.get("deadline")
+        if dl is None:
+            dl_style = "color:#6b7280;"
+            dl_label = "—"
+        elif dl < today_iso:
+            dl_style = "color:#b91c1c;font-weight:600;"
+            dl_label = _e(dl)
+        elif dl == today_iso:
+            dl_style = "color:#b45309;font-weight:600;"
+            dl_label = _e(dl)
+        else:
+            dl_style = "color:#374151;"
+            dl_label = _e(dl)
+        missing = ", ".join(s.get("missing") or [])
+        miss_chip = (
+            f'<span style="display:inline-block;padding:1px 6px;border-radius:8px;'
+            f'background:#fef3c7;color:#92400e;font-size:11px;margin-left:6px;">'
+            f"Missing: {_e(missing)}</span>"
+            if missing
+            else ""
+        )
+        status_chip = (
+            f'<span style="display:inline-block;padding:1px 6px;border-radius:8px;'
+            f'background:#e0f2fe;color:#0369a1;font-size:11px;margin-left:6px;">'
+            f'{_e(s.get("status") or "")}</span>'
+        )
+        rows += (
+            "<tr>"
+            f'<td style="padding:6px 10px;border-bottom:1px solid #eee;">{_e(s.get("title") or "")}{status_chip}{miss_chip}</td>'
+            f'<td style="padding:6px 10px;border-bottom:1px solid #eee;color:#6b7280;">{_e(s.get("assignee") or "—")}</td>'
+            f'<td style="padding:6px 10px;border-bottom:1px solid #eee;font-variant-numeric:tabular-nums;{dl_style}">{dl_label}</td>'
+            "</tr>"
+        )
+    more_footer = ""
+    if total > len(samples):
+        more_footer = (
+            f'<p style="margin:6px 0 0 0;font-size:12px;color:#6b7280;font-style:italic;">'
+            f"+ {total - len(samples)} more not shown — open TaskBot to see the full backlog.</p>"
+        )
+    return (
+        f'<h3 style="margin-top:24px;margin-bottom:4px">Open items needing your attention ({total})</h3>'
+        f'<p style="margin:0 0 6px 0;font-size:12px;color:#6b7280;">'
+        f"Tasks still pending review or missing a field. "
+        f"Overdue deadlines in red, due-today in amber."
+        f"</p>"
+        f'<table style="border-collapse:collapse;width:100%;font-size:13px;">'
+        f'<thead><tr style="text-align:left;color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">'
+        f'<th style="padding:6px 10px;border-bottom:1px solid #d1d5db;">Title</th>'
+        f'<th style="padding:6px 10px;border-bottom:1px solid #d1d5db;">Assignee</th>'
+        f'<th style="padding:6px 10px;border-bottom:1px solid #d1d5db;">Deadline</th>'
+        f"</tr></thead>"
+        f"<tbody>{rows}</tbody></table>"
+        f"{more_footer}"
+    )
 
 
 def render_brief_text(data: dict[str, Any]) -> str:
@@ -225,6 +349,31 @@ def render_brief_text(data: dict[str, Any]) -> str:
         lines.append("Team workload:")
         for m in data["team"]:
             lines.append(f"  {m['assignee']}: {m['open']} open, {m['overdue']} overdue")
+    # Round 14: same backlog list as the HTML body.
+    outstanding_total = int(data.get("outstanding_total") or 0)
+    outstanding_samples = data.get("outstanding_samples") or []
+    if outstanding_samples:
+        today_iso = data.get("period_end", "")
+        lines += ["", f"Open items needing your attention ({outstanding_total}):"]
+        for s in outstanding_samples:
+            dl = s.get("deadline")
+            if dl is None:
+                dl_label = "—"
+            elif dl < today_iso:
+                dl_label = f"{dl} [OVERDUE]"
+            elif dl == today_iso:
+                dl_label = f"{dl} [TODAY]"
+            else:
+                dl_label = dl
+            status = s.get("status") or ""
+            miss = f" [missing: {', '.join(s['missing'])}]" if s.get("missing") else ""
+            lines.append(
+                f"  - [{status}] {s.get('title') or ''} · {s.get('assignee') or '—'} · {dl_label}{miss}"
+            )
+        if outstanding_total > len(outstanding_samples):
+            lines.append(
+                f"  (+ {outstanding_total - len(outstanding_samples)} more — open TaskBot to see all)"
+            )
     return "\n".join(lines)
 
 

@@ -17,7 +17,10 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const PUBLIC_PREFIXES = ["/login", "/auth/callback"];
+// `/` (landing page) is public — unauthenticated visitors should be able to
+// see it without being bounced to /login. Anything not in this list still
+// requires an auth token.
+const PUBLIC_PREFIXES = ["/", "/login", "/auth/callback"];
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();

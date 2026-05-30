@@ -80,6 +80,7 @@ async function apiFetchForm<T>(path: string, form: FormData): Promise<T> {
 function tasksQuery(params: {
   status?: string;
   source?: string;
+  missing?: string;
   sort?: string;
   limit?: number;
   offset?: number;
@@ -87,6 +88,7 @@ function tasksQuery(params: {
   const q = new URLSearchParams();
   if (params.status) q.set("status", params.status);
   if (params.source) q.set("source", params.source);
+  if (params.missing) q.set("missing", params.missing);
   if (params.sort) q.set("sort", params.sort);
   if (params.limit != null) q.set("limit", String(params.limit));
   if (params.offset != null) q.set("offset", String(params.offset));
@@ -132,7 +134,7 @@ export const api = {
     logout: () => apiFetch<{ message: string }>("/auth/logout", { method: "POST" }),
   },
   tasks: {
-    list: async (params?: { status?: string; source?: string; sort?: string; limit?: number; offset?: number }) => {
+    list: async (params?: { status?: string; source?: string; missing?: string; sort?: string; limit?: number; offset?: number }) => {
       const { data, total } = await apiFetchList<Task[]>(`/tasks${tasksQuery(params ?? {})}`);
       return { tasks: data, total };
     },
@@ -229,7 +231,16 @@ export const api = {
       return apiFetchForm<{ upload_id: string; status: string }>("/upload", form);
     },
     status: (uploadId: string) =>
-      apiFetch<{ upload_id: string; status: string }>(`/upload/${uploadId}/status`),
+      apiFetch<{
+        upload_id: string;
+        status: string;
+        // Round 14 (2026-05-31): when status === "done", backend also returns
+        // the extracted count + a small preview list so the upload UI can
+        // show what was actually created instead of leaving the user
+        // staring at a "Done" checkmark with no result feedback.
+        extracted_count?: number;
+        extracted_tasks?: { id: string; title: string }[];
+      }>(`/upload/${uploadId}/status`),
   },
   digest: {
     send: () =>

@@ -34,13 +34,12 @@ export default function TasksPage() {
   const [cleaning, setCleaning] = useState(false);
   const [status, setStatus] = useState<string>("");
   const [source, setSource] = useState<string>("");
-  // Client-side filter on Task.missing_fields. Composes with the server-side
-  // status filter — e.g. "Pending" + "Missing deadline" surfaces just the
-  // pending tasks that also lack a deadline. Kept client-side because the
-  // backend has no missing_fields index and the typical page (50 tasks) is
-  // tiny enough that client filtering is imperceptible. Drawback: only the
-  // current page is filtered, so a "Missing" selection may show fewer rows
-  // than the global truth — acceptable trade-off vs. a new backend index.
+  // Round 14 (2026-05-31): missing-fields filter is now sent to the backend
+  // via ?missing=deadline|assignee|any. Pre-Round-14 it was client-side over
+  // the already-paginated page — page 1 looked empty whenever no rows on
+  // that page happened to carry the gap, even though the global count
+  // ("1-10 of 25") suggested matches existed. Backend filter fixes both
+  // the empty-page UX and the count-vs-content mismatch in one move.
   const [missing, setMissing] = useState<string>("");
   const [sort, setSort] = useState<string>("created_desc");
   const [page, setPage] = useState(1);
@@ -59,7 +58,7 @@ export default function TasksPage() {
     try {
       const offset = (p - 1) * PAGE_SIZE;
       const [taskResult, c] = await Promise.all([
-        api.tasks.list({ status: status || undefined, source: source || undefined, sort, limit: PAGE_SIZE, offset }),
+        api.tasks.list({ status: status || undefined, source: source || undefined, missing: missing || undefined, sort, limit: PAGE_SIZE, offset }),
         api.conflicts.list({ resolved: false }),
       ]);
       setTasks(taskResult.tasks);
@@ -70,20 +69,21 @@ export default function TasksPage() {
     } finally {
       setLoading(false);
     }
-  }, [status, source, sort, page]);
+    // ``missing`` must be in this list — without it the callback closure
+    // captures the stale value (""), and if the user toggles Missing
+    // while already on page 1, the setPage(1) below is a no-op so no
+    // re-render → no recreated callback → next fetch ships without the
+    // filter. ``status`` / ``source`` / ``sort`` are in the same boat;
+    // page-reset alone is not enough.
+  }, [status, source, sort, missing, page]);
 
   useEffect(() => { setPage(1); }, [status, source, sort, missing]);
   useEffect(() => { void load(page); }, [load, page]);
 
-  // Client-side missing-fields filter applied on top of the fetched page.
-  const visibleTasks = useMemo(() => {
-    if (!missing) return tasks;
-    return tasks.filter((t) => {
-      const fields = t.missing_fields ?? [];
-      if (missing === "any") return fields.length > 0;
-      return fields.includes(missing);
-    });
-  }, [tasks, missing]);
+  // Round 14: backend now applies the missing-fields filter (see
+  // ?missing=… in api.tasks.list), so the fetched page is already the
+  // visible page. Variable kept for minimal diff in the table render.
+  const visibleTasks = tasks;
 
   async function confirmTask(id: string) {
     setTasks((prev) => prev.map((t) => t.id === id ? { ...t, status: "confirmed", confirmed_by: "user" } : t));
@@ -342,16 +342,24 @@ export default function TasksPage() {
                           <span className="text-[10px] font-semibold uppercase tracking-wider rounded-full px-2 py-0.5 bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
                             confirmed
                           </span>
-                          {t.confirmed_by === "system" && (
-                            <button
-                              type="button"
-                              onClick={() => void revertTask(t.id)}
-                              className="text-[10px] text-[var(--muted)] hover:text-[var(--foreground)] opacity-0 group-hover:opacity-100 transition-opacity"
-                              title="Revert to pending for manual review"
-                            >
-                              Revert
-                            </button>
-                          )}
+                          {/* Round 14 (2026-05-31): allow Revert for ANY
+                              confirmed task — not just auto-confirmed. A
+                              user who clicked Confirm by mistake had no way
+                              back; now both confirmation paths are
+                              reversible. The hover-to-show keeps the table
+                              tidy. */}
+                          <button
+                            type="button"
+                            onClick={() => void revertTask(t.id)}
+                            className="text-[10px] text-[var(--muted)] hover:text-[var(--foreground)] opacity-0 group-hover:opacity-100 transition-opacity"
+                            title={
+                              t.confirmed_by === "system"
+                                ? "Auto-confirmed — revert to pending for manual review"
+                                : "Revert your confirmation back to pending"
+                            }
+                          >
+                            Revert
+                          </button>
                         </div>
                       ) : (
                         <span className="text-[10px] font-semibold uppercase tracking-wider rounded-full px-2 py-0.5 bg-gray-500/15 text-gray-500 dark:text-gray-400">

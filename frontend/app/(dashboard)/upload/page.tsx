@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import Link from "next/link";
 import toast from "react-hot-toast";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -14,11 +15,18 @@ const STEPS = [
 ];
 const STEP_KEYS = STEPS.map((s) => s.key);
 
+// Round 14 (2026-05-31): the agent writes "done" / "failed" / "extracting";
+// the frontend used to listen only for "completed" so polling never
+// terminated and the result block never rendered (visible bug on screenshot
+// from 2026-05-31). Treat both names as success for forward-compat.
+const _DONE_STATUSES = new Set(["done", "completed"]);
+const _FAIL_STATUSES = new Set(["failed", "error"]);
+
 function statusToStepKey(uploading: boolean, status: string | null): string {
   if (uploading) return "uploading";
   if (!status) return "";
   if (status === "queued") return "queued";
-  if (status === "processing") return "processing";
+  if (status === "processing" || status === "extracting") return "processing";
   return "done";
 }
 
@@ -77,19 +85,72 @@ function UploadStepTracker({ stepKey, failed }: { stepKey: string; failed: boole
 }
 
 // ─── Result banner ─────────────────────────────────────────────────────────────
-function ResultBanner({ status, filename }: { status: string; filename: string }) {
-  if (status === "completed") {
+function ResultBanner({
+  status,
+  filename,
+  extractedCount,
+  extractedTasks,
+}: {
+  status: string;
+  filename: string;
+  extractedCount?: number;
+  extractedTasks?: { id: string; title: string }[];
+}) {
+  if (_DONE_STATUSES.has(status)) {
+    // Round 14: surface the actual outcome — how many tasks landed, with a
+    // short preview list — so the user doesn't have to guess. Three cases:
+    //   - extractedCount undefined  → backend didn't report (older agent)
+    //   - extractedCount === 0      → pipeline ran clean, file simply had no
+    //                                  deliverables (e.g. an FYI doc or an
+    //                                  interview transcript). Don't shout
+    //                                  "success" loudly — explain.
+    //   - extractedCount > 0        → list the titles + link to Tasks.
+    const count = extractedCount;
+    const haveCount = typeof count === "number";
+    const headline =
+      !haveCount ? "Extraction complete"
+      : count === 0 ? "No tasks found in this file"
+      : count === 1 ? "1 task extracted"
+      : `${count} tasks extracted`;
+    const tone = haveCount && count === 0
+      ? "bg-amber-500/10 border-amber-500/20 text-amber-300"
+      : "bg-emerald-500/10 border-emerald-500/20 text-emerald-300";
     return (
-      <div className="flex items-start gap-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-4 py-3">
-        <svg className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-        <div>
-          <p className="text-sm font-medium text-emerald-400">Extraction complete</p>
-          <p className="text-xs text-emerald-400/70 mt-0.5">
-            Tasks from <span className="font-medium">{filename}</span> have been saved. Check the Tasks page.
-          </p>
+      <div className={cn("rounded-lg border px-4 py-3 space-y-2", tone)}>
+        <div className="flex items-start gap-2">
+          <svg className="w-4 h-4 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div className="min-w-0">
+            <p className="text-sm font-medium">{headline}</p>
+            <p className="text-xs opacity-70 mt-0.5">
+              From <span className="font-medium">{filename}</span>
+              {haveCount && count === 0 && " — the pipeline ran cleanly but found no actionable deliverables in the text."}
+            </p>
+          </div>
         </div>
+        {extractedTasks && extractedTasks.length > 0 && (
+          <ul className="ml-6 text-xs opacity-90 space-y-0.5">
+            {extractedTasks.map((t) => (
+              <li key={t.id} className="truncate">
+                •{" "}
+                <Link href={`/tasks/${t.id}`} className="hover:underline">
+                  {t.title}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+        {haveCount && count > 0 && (
+          <div className="ml-6">
+            <Link
+              href="/tasks?source=upload"
+              className="inline-block text-xs underline opacity-80 hover:opacity-100"
+            >
+              View all in Tasks →
+            </Link>
+          </div>
+        )}
       </div>
     );
   }
@@ -165,9 +226,13 @@ export default function UploadPage() {
   const [filename, setFilename] = useState("");
   const [uploading, setUploading] = useState(false);
   const [polling, setPolling]     = useState(false);
+  // Round 14: extracted-task preview returned by the status endpoint when
+  // status reaches "done". Drives the result block; null pre-completion.
+  const [extractedCount, setExtractedCount] = useState<number | undefined>(undefined);
+  const [extractedTasks, setExtractedTasks] = useState<{ id: string; title: string }[] | undefined>(undefined);
 
-  const isDone   = status === "completed" || status === "failed" || status === "error";
-  const isFailed = status === "failed" || status === "error";
+  const isDone   = status !== null && (_DONE_STATUSES.has(status) || _FAIL_STATUSES.has(status));
+  const isFailed = status !== null && _FAIL_STATUSES.has(status);
   const stepKey  = statusToStepKey(uploading, status);
   const inProgress = uploading || polling;
 
@@ -177,8 +242,14 @@ export default function UploadPage() {
       for (let i = 0; i < 60; i++) {
         const r = await api.upload.status(id);
         setStatus(r.status);
-        if (r.status === "completed") { toast.success("Tasks extracted successfully"); return; }
-        if (r.status === "failed" || r.status === "error") { toast.error("Pipeline failed — check file format"); return; }
+        if (_DONE_STATUSES.has(r.status)) {
+          setExtractedCount(r.extracted_count);
+          setExtractedTasks(r.extracted_tasks);
+          const n = r.extracted_count ?? 0;
+          toast.success(n === 0 ? "Pipeline done — no tasks found" : `${n} task${n === 1 ? "" : "s"} extracted`);
+          return;
+        }
+        if (_FAIL_STATUSES.has(r.status)) { toast.error("Pipeline failed — check file format"); return; }
         await new Promise((res) => setTimeout(res, 2000));
       }
       toast.error("Timed out waiting for pipeline");
@@ -191,6 +262,8 @@ export default function UploadPage() {
     if (file.size > 10 * 1024 * 1024) { toast.error("Max file size 10 MB"); return; }
     setUploadId(null);
     setStatus(null);
+    setExtractedCount(undefined);
+    setExtractedTasks(undefined);
     setFilename(file.name);
     setUploading(true);
     let id = "";
@@ -209,7 +282,13 @@ export default function UploadPage() {
     void pollStatus(id);
   }
 
-  function reset() { setUploadId(null); setStatus(null); setFilename(""); }
+  function reset() {
+    setUploadId(null);
+    setStatus(null);
+    setExtractedCount(undefined);
+    setExtractedTasks(undefined);
+    setFilename("");
+  }
 
   return (
     <div className="max-w-xl space-y-5">
@@ -253,7 +332,14 @@ export default function UploadPage() {
           )}
 
           {/* Result banner */}
-          {isDone && <ResultBanner status={status!} filename={filename} />}
+          {isDone && (
+            <ResultBanner
+              status={status!}
+              filename={filename}
+              extractedCount={extractedCount}
+              extractedTasks={extractedTasks}
+            />
+          )}
         </div>
       )}
 

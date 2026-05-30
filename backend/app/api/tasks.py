@@ -51,9 +51,33 @@ async def _source_type_by_doc_id(db: AsyncSession, doc_ids: list[UUID]) -> dict[
     return {row[0]: row[1] for row in r.all()}
 
 
+def _derive_missing_fields(task: Task) -> list[str]:
+    """Round 14 (2026-05-31): the pipeline writes ``missing_fields`` once at
+    extract time and the agent's update-in-place path refreshes it, but
+    historical rows can carry a stale array — e.g. a task created without a
+    deadline, then PATCHed with one before the Round-14 PATCH-time recompute
+    landed. Deriving on read from the actual ``deadline`` / ``assignee``
+    column values makes the chip and the filter agree with what the user
+    sees in the row, regardless of how the row got into its current state.
+
+    Mirrors ``agent/app/pipeline/nodes/validate_tasks._missing_fields`` so
+    backend and pipeline use the same definition.
+    """
+    missing: list[str] = []
+    if task.deadline is None:
+        missing.append("deadline")
+    if not task.assignee:
+        missing.append("assignee")
+    return missing
+
+
 def _task_response(task: Task, source_type: str | None) -> TaskResponse:
     data = TaskResponse.model_validate(task).model_dump()
     data["source_type"] = source_type
+    # Override the persisted array with the freshly-derived one. The stored
+    # array is kept as an audit trail of what the pipeline saw at extract
+    # time; what the user sees should always match the current row state.
+    data["missing_fields"] = _derive_missing_fields(task)
     if not get_settings().task_v2_read_enabled:
         data["deadline_v2"] = None
         data["uncertainty"] = None
@@ -79,6 +103,7 @@ def _apply_task_list_filters(
     source: str | None,
     deadline_from: date | None,
     deadline_to: date | None,
+    missing: str | None = None,
 ):
     if status:
         stmt = stmt.where(Task.status == status)
@@ -86,6 +111,26 @@ def _apply_task_list_filters(
         stmt = stmt.where(Task.deadline >= deadline_from)
     if deadline_to:
         stmt = stmt.where(Task.deadline <= deadline_to)
+    # Round 14 (2026-05-31, revised): filter against the live column values
+    # rather than the persisted ``missing_fields`` array. The array is
+    # stamped once at extract time and can go stale (e.g. a task created
+    # without a deadline, then PATCHed with one — pre-Round-14 the array
+    # was never refreshed). Using column predicates means the filter and
+    # the chip (which is also derived on read in ``_derive_missing_fields``)
+    # always agree with what the user sees in the row.
+    #   - "deadline"  → rows where the deadline column is NULL
+    #   - "assignee"  → rows where the assignee text is NULL or empty
+    #   - "any"       → either of the above
+    if missing == "deadline":
+        stmt = stmt.where(Task.deadline.is_(None))
+    elif missing == "assignee":
+        stmt = stmt.where((Task.assignee.is_(None)) | (func.length(func.trim(Task.assignee)) == 0))
+    elif missing == "any":
+        stmt = stmt.where(
+            (Task.deadline.is_(None))
+            | (Task.assignee.is_(None))
+            | (func.length(func.trim(Task.assignee)) == 0)
+        )
     if source:
         stmt = stmt.join(SourceDocument, Task.source_doc_id == SourceDocument.id).where(
             SourceDocument.source_type == source
@@ -115,6 +160,7 @@ async def list_tasks(
     response: Response,
     status: str | None = Query(None, pattern=r"^(pending|confirmed|dismissed)$"),
     source: str | None = Query(None, pattern=r"^(gmail|gmail_sent|drive|upload)$"),
+    missing: str | None = Query(None, pattern=r"^(deadline|assignee|any)$"),
     deadline_from: date | None = Query(None),
     deadline_to: date | None = Query(None),
     sort: str = Query("created_desc", pattern=r"^(deadline_asc|created_desc)$"),
@@ -128,6 +174,7 @@ async def list_tasks(
         "source": source,
         "deadline_from": deadline_from,
         "deadline_to": deadline_to,
+        "missing": missing,
     }
     total = await _count_filtered_tasks(db, current_user.id, **filters)
     response.headers["X-Total-Count"] = str(total)
@@ -302,6 +349,15 @@ async def update_task(
         task.confirmed_by = "user"
     elif changes.get("status") == "pending":
         task.confirmed_by = None  # intentional revert clears badge signal
+
+    # Round 14 (2026-05-31): keep the persisted ``missing_fields`` array in
+    # sync with the current row state whenever the user edits a flaggable
+    # field. Read APIs derive this fresh via ``_derive_missing_fields``, so
+    # the chip is always correct regardless — but persisting on write means
+    # downstream consumers that read the column directly (daily digest,
+    # weekly brief) also see fresh values without each having to re-derive.
+    if any(k in changes for k in ("deadline", "assignee")):
+        task.missing_fields = _derive_missing_fields(task)
 
     # When confirming a task that has a deadline, enqueue a calendar event
     # creation/update job so the event appears without requiring a full sync.

@@ -204,6 +204,74 @@ def test_patch_task_updates_fields() -> None:
     assert r.json()["assignee"] == "Bob"
 
 
+# ── Round 14 (revised, 2026-05-31): missing_fields is derived on read ────
+# A task can have a stale persisted array (e.g. created without a deadline,
+# then PATCHed with one before the recompute fix landed). The API must
+# return the live state, not the stale array, and the filter must agree.
+
+
+def test_missing_fields_derived_overrides_stale_array() -> None:
+    """A task with both deadline and assignee but a stale
+    ``missing_fields=['deadline', 'assignee']`` array must report an empty
+    list on read — otherwise the chip shows "Missing: deadline" for a row
+    that clearly has one."""
+    user = _make_user()
+    t1 = _make_task(
+        deadline=date(2026, 6, 1),
+        assignee="Emily",
+        missing_fields=["deadline", "assignee"],  # stale, from before edit
+    )
+    db = _FakeDB(tasks=[t1])
+    client = TestClient(_build_app(db, user))
+    r = client.get(f"/tasks/{_TASK_ID}")
+    assert r.status_code == 200
+    assert r.json()["missing_fields"] == []
+
+
+def test_missing_fields_derived_surfaces_real_gap() -> None:
+    """Inverse: a task with no deadline but ``missing_fields=[]`` (e.g. the
+    pipeline forgot to flag it) must still report ``['deadline']``."""
+    user = _make_user()
+    t1 = _make_task(deadline=None, assignee="Emily", missing_fields=[])
+    db = _FakeDB(tasks=[t1])
+    client = TestClient(_build_app(db, user))
+    r = client.get(f"/tasks/{_TASK_ID}")
+    assert r.status_code == 200
+    assert r.json()["missing_fields"] == ["deadline"]
+
+
+def test_missing_filter_uses_column_predicate_not_stale_array() -> None:
+    """The ``?missing=deadline`` filter must compile to a predicate against
+    the live ``tasks.deadline`` column (IS NULL), not the persisted
+    ``missing_fields`` array. If the SQL falls back to the array predicate,
+    a row with deadline set but a stale array would wrongly match — which
+    is exactly the bug this fix removes."""
+    user = _make_user()
+    db = _FakeDB(tasks=[])
+    client = TestClient(_build_app(db, user))
+    r = client.get("/tasks?missing=deadline")
+    assert r.status_code == 200
+    sql = (db.last_sql or "").lower()
+    assert "tasks.deadline is null" in sql
+    # The stale-array predicate must no longer be the filter. The column
+    # still appears in the SELECT list (it's a Task attribute), so we
+    # only assert the array-containment WHERE shape is gone.
+    assert "missing_fields @>" not in sql
+    assert "= any(tasks.missing_fields)" not in sql
+    assert "array_length(tasks.missing_fields" not in sql
+
+
+def test_missing_any_filter_covers_both_columns() -> None:
+    user = _make_user()
+    db = _FakeDB(tasks=[])
+    client = TestClient(_build_app(db, user))
+    r = client.get("/tasks?missing=any")
+    assert r.status_code == 200
+    sql = (db.last_sql or "").lower()
+    assert "tasks.deadline is null" in sql
+    assert "tasks.assignee is null" in sql
+
+
 def test_delete_task() -> None:
     user = _make_user()
     t1 = _make_task(calendar_event_id="evt-123")
