@@ -92,15 +92,29 @@ async def pull_recent_gmail_messages(
     access_token: str,
     last_sync_at: datetime | None = None,
     sync_profile: str = "balanced",
+    folder: str = "inbox",
 ) -> list[dict]:
+    """Fetch the recent message list from the user's inbox OR sent folder.
+
+    ``folder`` defaults to ``"inbox"`` so all existing callers (and existing
+    tests) are unaffected. Team-mode users get an additional sync invocation
+    with ``folder="sent"`` from ``sync_all_users_gmail`` — see jobs.py.
+
+    Note: history-id is only persisted for the inbox sync. The sent folder
+    has its own Gmail history but we don't track an independent cursor for
+    it — the ``after:<ts>`` time filter on ``in:sent`` queries is enough for
+    incremental sync of outgoing mail, and skipping the history dance keeps
+    the dispatcher simple.
+    """
     gmail = GmailMCPClient(access_token=access_token)
     max_results = _gmail_limit_for_profile(sync_profile)
     messages = await gmail.list_messages(
         last_sync_at=last_sync_at,
         max_results=max_results,
         sync_profile=sync_profile,
+        folder=folder,
     )
-    if messages:
+    if folder == "inbox" and messages:
         latest_history_id = str(messages[0].get("history_id") or messages[0].get("historyId") or "")
         if latest_history_id:
             await set_gmail_last_history_id(user_id, latest_history_id)

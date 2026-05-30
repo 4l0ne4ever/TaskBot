@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { api } from "@/lib/api";
 import type { TeamMemberStats, TeamView } from "@/lib/types";
+import { useAccountMode } from "@/lib/useAccountMode";
 import { cn } from "@/lib/utils";
 
 const card = "rounded-xl border border-[var(--border)] bg-[var(--surface)]";
@@ -41,12 +43,30 @@ export default function TeamPage() {
   const [err, setErr] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
 
+  // Round 11 (2026-05-30): /team is gated to team-mode accounts. A
+  // single-mode user who types the URL directly (or has a stale bookmark)
+  // gets soft-redirected to /tasks. We wait for ``loaded`` so a transient
+  // pre-fetch "single" doesn't bounce a team-mode user to /tasks on every
+  // navigation; once the real answer arrives the redirect (if any) fires.
+  const router = useRouter();
+  const { mode, loaded: modeLoaded } = useAccountMode();
   useEffect(() => {
+    if (modeLoaded && mode === "single") {
+      router.replace("/tasks");
+    }
+  }, [modeLoaded, mode, router]);
+
+  useEffect(() => {
+    // Don't fetch the team rollup until we know we're allowed to be here —
+    // a single-mode user about to redirect shouldn't trigger a wasted API
+    // call (and the backend will eventually 403 single-mode users from
+    // /tasks/team in a follow-up, but UI-side guard is the first fence).
+    if (!modeLoaded || mode !== "team") return;
     api.tasks
       .team()
       .then(setData)
       .catch((e) => setErr(e instanceof Error ? e.message : "Failed to load team view"));
-  }, []);
+  }, [modeLoaded, mode]);
 
   async function sendBrief() {
     setSending(true);

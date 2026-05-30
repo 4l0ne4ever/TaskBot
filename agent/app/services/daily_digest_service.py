@@ -41,6 +41,13 @@ logger = logging.getLogger(__name__)
 
 DAILY_DIGEST_WINDOW_HOURS = 24
 _MAX_REVIEW_TASKS_SHOWN = 8
+# Round 12 (2026-05-30): a separate "still outstanding" section lists tasks
+# that need the user's attention regardless of age — pending tasks plus any
+# confirmed task with a missing field. The today-only counters above don't
+# convey the actual backlog; this fills that gap. Capped higher than the
+# today-window list because the user requested a real backlog view, not just
+# a sample.
+_MAX_OUTSTANDING_TASKS_SHOWN = 20
 
 
 def _coerce_dt(value: Any) -> datetime | None:
@@ -81,6 +88,10 @@ def build_digest_data(
     overdue_now = 0            # confirmed tasks past their deadline as of today
     due_today = 0
     review_samples: list[dict[str, Any]] = []
+    # Round 12: backlog of everything still needing attention (pending OR
+    # confirmed-with-missing-fields), regardless of age. Collected here as a
+    # superset of review_samples, sorted later by urgency before rendering.
+    outstanding_all: list[dict[str, Any]] = []
 
     for t in tasks:
         created = _coerce_dt(t.created_at)
@@ -94,6 +105,23 @@ def build_digest_data(
             if t.status == "dismissed":
                 dismissed_today += 1
 
+        missing = list(t.missing_fields or [])
+        # "Needs attention" = pending OR confirmed-with-any-missing-field.
+        # Dismissed tasks are excluded — the user already triaged them.
+        needs_attention = (
+            t.status == "pending"
+            or (t.status == "confirmed" and len(missing) > 0)
+        )
+        if needs_attention:
+            outstanding_all.append({
+                "title": t.title or "(untitled)",
+                "status": t.status,
+                "assignee": t.assignee,
+                "deadline": _coerce_date(t.deadline).isoformat() if _coerce_date(t.deadline) else None,
+                "missing": missing,
+                "created": (created.date().isoformat() if created else None),
+            })
+
         if t.status == "pending":
             pending_review_now += 1
             if len(review_samples) < _MAX_REVIEW_TASKS_SHOWN:
@@ -102,7 +130,7 @@ def build_digest_data(
                         "title": t.title or "(untitled)",
                         "assignee": t.assignee,
                         "deadline": _coerce_date(t.deadline).isoformat() if _coerce_date(t.deadline) else None,
-                        "missing": list(t.missing_fields or []),
+                        "missing": missing,
                     }
                 )
 
@@ -113,6 +141,22 @@ def build_digest_data(
                     overdue_now += 1
                 elif dl == today:
                     due_today += 1
+
+    # Sort outstanding by urgency: overdue first, then due-today, then
+    # future-with-deadline (soonest first), then no-deadline rows last.
+    today_iso = today.isoformat()
+    def _urgency_key(item: dict[str, Any]) -> tuple:
+        dl = item.get("deadline")
+        if dl is None:
+            return (3, "")              # no deadline — last
+        if dl < today_iso:
+            return (0, dl)              # overdue — first, by date asc
+        if dl == today_iso:
+            return (1, dl)              # due today — second
+        return (2, dl)                  # future — third, by date asc
+    outstanding_all.sort(key=_urgency_key)
+    outstanding_samples = outstanding_all[:_MAX_OUTSTANDING_TASKS_SHOWN]
+    outstanding_total = len(outstanding_all)
 
     conflicts_today = 0
     open_conflicts = 0
@@ -137,6 +181,10 @@ def build_digest_data(
         "conflicts_today": conflicts_today,
         "open_conflicts": open_conflicts,
         "review_samples": review_samples,
+        # Round 12: full backlog of tasks needing attention, age-agnostic
+        # (Anna wants to see what's *still* outstanding, not just today's).
+        "outstanding_total": outstanding_total,
+        "outstanding_samples": outstanding_samples,
     }
 
 
@@ -204,7 +252,7 @@ def render_digest_html(data: dict[str, Any]) -> str:
     &nbsp;·&nbsp; Conflicts (new today / still open): <b>{data["conflicts_today"]} / {data["open_conflicts"]}</b>
   </p>
 
-  <h3 style="margin:22px 0 6px 0;font-size:14px;">Pending your review</h3>
+  <h3 style="margin:22px 0 6px 0;font-size:14px;">Pending your review (today)</h3>
   <table style="border-collapse:collapse;width:100%;font-size:13px;">
     <thead>
       <tr style="text-align:left;color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">
@@ -216,10 +264,88 @@ def render_digest_html(data: dict[str, Any]) -> str:
     <tbody>{samples_rows}</tbody>
   </table>
 
+  {_render_outstanding_html(data)}
+
   <p style="margin:18px 0 0 0;font-size:12px;color:#9ca3af;">
     Sent from your own Gmail to yourself — TaskBot uses your ``gmail.send`` scope.
   </p>
 </body></html>"""
+
+
+def _render_outstanding_html(data: dict[str, Any]) -> str:
+    """Render the Round-12 "Still outstanding" section below today's report.
+
+    Lists every task that needs attention regardless of age (pending OR
+    confirmed-with-missing-fields), sorted by urgency (overdue → due today →
+    future → no-deadline). Capped at ``_MAX_OUTSTANDING_TASKS_SHOWN`` rows;
+    a "+N more" footer surfaces the remaining count so the user knows the
+    list is truncated.
+    """
+    total = data.get("outstanding_total", 0)
+    samples = data.get("outstanding_samples", [])
+    if not samples:
+        # Don't render an empty section — the today section already says
+        # "clean slate" when there's nothing. A second "clean slate" would
+        # be noise.
+        return ""
+    today_iso = data.get("date_label", "")
+    rows = ""
+    for s in samples:
+        dl = s.get("deadline")
+        # Tint deadline by urgency: overdue red, due-today amber, future muted.
+        if dl is None:
+            dl_style = "color:#6b7280;"
+            dl_label = "—"
+        elif dl < today_iso:
+            dl_style = "color:#b91c1c;font-weight:600;"
+            dl_label = _e(dl)
+        elif dl == today_iso:
+            dl_style = "color:#b45309;font-weight:600;"
+            dl_label = _e(dl)
+        else:
+            dl_style = "color:#374151;"
+            dl_label = _e(dl)
+        missing = ", ".join(s.get("missing") or [])
+        miss_chip = (
+            f'<span style="display:inline-block;padding:1px 6px;border-radius:8px;'
+            f'background:#fef3c7;color:#92400e;font-size:11px;margin-left:6px;">'
+            f'Missing: {_e(missing)}</span>'
+            if missing
+            else ""
+        )
+        status_chip = (
+            f'<span style="display:inline-block;padding:1px 6px;border-radius:8px;'
+            f'background:#e0f2fe;color:#0369a1;font-size:11px;margin-left:6px;">'
+            f'{_e(s.get("status") or "")}</span>'
+        )
+        rows += (
+            "<tr>"
+            f'<td style="padding:6px 10px;border-bottom:1px solid #eee;">{_e(s["title"])}{status_chip}{miss_chip}</td>'
+            f'<td style="padding:6px 10px;border-bottom:1px solid #eee;color:#6b7280;">{_e(s.get("assignee") or "—")}</td>'
+            f'<td style="padding:6px 10px;border-bottom:1px solid #eee;font-variant-numeric:tabular-nums;{dl_style}">{dl_label}</td>'
+            "</tr>"
+        )
+    more_footer = ""
+    if total > len(samples):
+        more_footer = (
+            f'<p style="margin:6px 0 0 0;font-size:12px;color:#6b7280;font-style:italic;">'
+            f'+ {total - len(samples)} more not shown — open TaskBot to see the full backlog.</p>'
+        )
+    return (
+        f'<h3 style="margin:22px 0 6px 0;font-size:14px;">Still outstanding ({total} total, any age)</h3>'
+        f'<p style="margin:0 0 6px 0;font-size:12px;color:#6b7280;">'
+        f"Tasks that still need your attention — pending or with missing fields — regardless of when they appeared. "
+        f"Overdue deadlines are in red, due-today in amber."
+        f"</p>"
+        f'<table style="border-collapse:collapse;width:100%;font-size:13px;">'
+        f'<thead><tr style="text-align:left;color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">'
+        f'<th style="padding:6px 10px;border-bottom:1px solid #d1d5db;">Title</th>'
+        f'<th style="padding:6px 10px;border-bottom:1px solid #d1d5db;">Assignee</th>'
+        f'<th style="padding:6px 10px;border-bottom:1px solid #d1d5db;">Deadline</th>'
+        f"</tr></thead>"
+        f"<tbody>{rows}</tbody></table>"
+        f"{more_footer}"
+    )
 
 
 def render_digest_text(data: dict[str, Any]) -> str:
@@ -249,6 +375,32 @@ def render_digest_text(data: dict[str, Any]) -> str:
             lines.append(
                 f"  - {s['title']} · {s['assignee'] or '—'} · {s['deadline'] or '—'}{miss}"
             )
+    # Round 12: still-outstanding section (age-agnostic backlog).
+    outstanding_total = data.get("outstanding_total", 0)
+    outstanding_samples = data.get("outstanding_samples", [])
+    if outstanding_samples:
+        lines += ["", f"Still outstanding ({outstanding_total} total, any age):"]
+        today_iso = data.get("date_label", "")
+        for s in outstanding_samples:
+            dl = s.get("deadline")
+            if dl is None:
+                dl_label = "—"
+            elif dl < today_iso:
+                dl_label = f"{dl} [OVERDUE]"
+            elif dl == today_iso:
+                dl_label = f"{dl} [TODAY]"
+            else:
+                dl_label = dl
+            status = s.get("status") or ""
+            miss = f" [missing: {', '.join(s['missing'])}]" if s.get("missing") else ""
+            lines.append(
+                f"  - [{status}] {s['title']} · {s.get('assignee') or '—'} · {dl_label}{miss}"
+            )
+        if outstanding_total > len(outstanding_samples):
+            lines.append(
+                f"  (+ {outstanding_total - len(outstanding_samples)} more — open TaskBot to see all)"
+            )
+
     lines += [
         "",
         "(Sent from your own Gmail to yourself — gmail.send scope.)",

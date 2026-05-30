@@ -480,3 +480,191 @@ end-to-end.
     first-class status enum value (or a status-filter dropdown option
     "Missing deadline") would let users filter on it directly. Deferred —
     not blocking, not regressing.
+
+11. **Team mode demo gap — needs a real delegation email.** Items 1–10 of
+    Round 11 (2026-05-30, see §8 below) added single/team account modes with
+    sent-folder sync and a sent-context extraction prompt. Architecturally
+    verified end-to-end on the dogfood account: dual-job enqueue fires, sent
+    folder query returns messages, ``(source_type, source_ref)`` dedup
+    correctly distinguishes inbox and sent rows, ``EXTRACTION_SYSTEM_SENT``
+    routes for ``metadata.folder=="sent"``, ``/tasks`` default-excludes
+    ``gmail_sent``. But the only content currently in the dogfood account's
+    sent folder is a self-sent Daily Digest email — informational, no
+    delegations, so it yields 0 tasks (correctly). To prove the **Anna-Lead
+    persona narrative** ("Anna sends an email assigning work to Hương /
+    Minh, /team aggregates the workload"), the dogfood account needs at
+    least one real delegation email between now and the GVHD report. Not a
+    code defect — a content gap.
+
+12. *(Shipped in Round 12, 2026-05-30: §9.1 — "Still outstanding" section
+    added to daily digest.)*
+
+13. *(Shipped in Round 12, 2026-05-30: §9.2 — `PAGE_SIZE = 10`.)*
+
+14. *(Shipped in Round 12, 2026-05-30: §9.3 — upload pipeline worker
+    wired end-to-end.)*
+
+---
+
+## 8. Single vs Team mode (Round 11, 2026-05-30)
+
+The Anna-Lead persona (Tech Lead, team of 8 — the project's stated target
+user) needs two things the original sync didn't provide: visibility into
+delegated work she sends *out* to teammates, and a way to opt **out** of
+the team view when the personal-inbox path is enough. Round 11 added an
+account-mode switch that gates both.
+
+### 8.1 Architecture — schema-free mode in `sync_config`
+
+No migration. Mode lives in `users.sync_config["mode"]` (a jsonb column
+that already held `gmail_interval` / `drive_interval` / `sync_profile`).
+Default `"single"` is read-side fallback so every legacy user keeps
+current behaviour exactly. Exposed and editable via the existing
+`GET/PATCH /settings` endpoint — no new API surface.
+
+```
+sync_config: { "mode": "single" | "team", "gmail_interval": …, … }
+```
+
+### 8.2 Sync folder branching — one Gmail account, two folders
+
+`agent/app/scheduler/jobs.py:sync_all_users_gmail` enqueues an **inbox**
+Redis job for every eligible user, and an **additional sent** job when
+`sync_config["mode"] == "team"`. `agent/app/mcp/gmail_client.py:list_messages`
+takes a `folder` parameter (default `"inbox"` so every existing caller is
+unaffected) and branches the Gmail query:
+
+```
+folder="inbox"  → in:inbox category:primary -category:promotions …    (current behaviour)
+folder="sent"   → in:sent                                              (new)
+```
+
+The job dispatcher in `queue_consumer.consume_pipeline_jobs` reads the
+`folder` field from the Redis payload and threads it to
+`_process_gmail_job → pull_recent_gmail_messages → list_messages`. The
+SourceDocument insert site picks `source_type` from the folder
+(`"gmail"` for inbox, `"gmail_sent"` for sent), and the **dedup check
+itself is scoped to that same source_type** so a self-sent email (e.g.
+the Daily Digest) gets two distinct rows — one for the inbox copy, one
+for the sent copy. Without that scoping the second job would skip the
+message as "already processed" by ref alone.
+
+### 8.3 Sent-context extraction prompt
+
+`agent/app/pipeline/prompts.py:EXTRACTION_SYSTEM_SENT` is a variant of
+`EXTRACTION_SYSTEM_V1` with one inverted default: the current user is
+the *assignor*, never the assignee. For "Hương làm X, Minh fix Y" the
+extracted assignees are Hương and Minh — never the current user.
+Routing happens in `extract_tasks._build_extraction_prompt` by branching
+on `state.metadata.folder == "sent"`. Inbox / Drive / Upload paths are
+untouched and still use V1.
+
+`state.source_type` deliberately stays `"gmail"` for both folders so
+`parse_input` / `validate_tasks` / observability continue to treat them
+identically — the folder distinction is consumed by exactly one node
+(`extract_tasks`) and the SourceDocument insert site.
+
+### 8.4 UI gating
+
+- **Sidebar `/team` entry**: hidden for `mode=="single"` via
+  `useAccountMode()` hook (mirrors `usePendingReviewCount`'s pattern).
+- **`/team` route guard**: a single-mode user who navigates there
+  directly is soft-redirected to `/tasks` via `router.replace()`.
+- **`/tasks` default filter**: `_apply_task_list_filters` adds a default
+  `WHERE source_type != 'gmail_sent' OR source_type IS NULL` when no
+  source param is provided. The user is the *assignor* of sent-context
+  tasks, not the assignee — they don't belong in the personal task list.
+  Callers can opt in explicitly with `?source=gmail_sent`.
+- **Settings page**: radio toggle between single/team that PATCHes
+  `sync_config["mode"]`. The label explicitly notes the switch is
+  forward-only data-wise (historical sent emails are not back-filled —
+  avoids quota blowup and stale-delegation re-surfacing).
+
+### 8.5 Test coverage
+
+| Area | Tests |
+|---|---|
+| Settings endpoint mode field (default, get, patch, reject unknown) | `backend/tests/unit/test_settings_api.py` (+5) |
+| Sent-prompt routing (V1 for inbox / missing folder, SENT for folder='sent') | `agent/tests/unit/test_extract_tasks_node.py` (+3) |
+| Full gate | **505 pass** (was 497; +8 net for Round 11) |
+
+### 8.6 Verified on dogfood (2026-05-30)
+
+End-to-end smoke against the real dogfood account, post-rebuild:
+
+```
+source_documents:
+  gmail        → 23 docs (inbox)
+  gmail_sent   → 1  doc  (Anna's self-sent Daily Digest, distinct row)
+tasks:
+  gmail        → 25 tasks (19 with assignees — extraction reads the user as the
+                            implicit assignee per V1 prompt)
+  gmail_sent   → 0  tasks  (correct: the digest is informational; SENT prompt
+                            rightly returns no tasks for it)
+```
+
+The demo gap (see §7.11) is content, not code: the dogfood account has
+no real *delegation* emails in its sent folder yet, only the digest TaskBot
+sends to itself. One real delegation email between now and the GVHD report
+would close the demo loop.
+
+---
+
+## 9. Round 12 (2026-05-30) — post-team-mode polish
+
+After the Round 11 team-mode landing, three small but user-visible items
+came up during dogfood testing. Originally documented as `§7.12–7.14`
+future work; explicit Option-C override moved them in-scope. All three
+shipped same day.
+
+### 9.1 Daily digest — "Still outstanding" section
+
+`build_digest_data` now returns ``outstanding_total`` and
+``outstanding_samples`` (cap 20, sorted overdue → due-today → future →
+no-deadline). `render_digest_html` / `render_digest_text` add a
+second-section list under the today report: every pending task plus every
+confirmed-with-missing-fields task, regardless of age. Empty backlog
+omits the section (avoids a redundant "clean slate" line under the
+today-section's existing one).
+
+Tests: `agent/tests/unit/test_daily_digest_service.py` — +7 tests
+(age-agnostic inclusion, dismissed-excluded, urgency sort, cap+footer,
+empty omission, overdue/today plaintext markers).
+
+### 9.2 Tasks page — page size 20 → 10
+
+`frontend/app/(dashboard)/tasks/page.tsx` — `PAGE_SIZE = 10`. No other
+change; existing pagination/X-Total-Count plumbing already handled the
+arbitrary size.
+
+### 9.3 Upload pipeline — agent worker wired
+
+`_process_upload_job` in `agent/app/scheduler/queue_consumer.py` fetches
+the file from S3 (boto3 + agent's existing `env_file: .env` AWS creds),
+constructs an upload-shaped pipeline state with the bytes as
+``raw_content``, invokes the LangGraph pipeline (existing
+`parse_input` already handles `source_type=='upload'` via the PDF/DOCX
+branch), updates ``upload:status:*`` through
+``queued → extracting → done`` (or → `failed` on any error so the UI
+shows something honest instead of an eternal spinner). The dispatcher
+in `consume_pipeline_jobs` routes `source_type=='upload'` jobs BEFORE
+the `if not user_id or not token` rejection guard — uploads carry no
+OAuth token because they don't need one.
+
+Tests: `agent/tests/unit/test_queue_consumer_upload.py` — +4 tests
+(happy-path status transitions, state shape carries bytes + filename,
+failure flips status to ``failed``, AWS-misconfig path).
+
+Verified on the previously-stuck dogfood file
+`06_プロブレムインタビュー(2).pdf` (840KB):
+- Re-enqueued the abandoned job → worker picked it up
+- S3 fetch: 840219 bytes
+- Pipeline ran to completion
+- Status: ``done``
+- 0 tasks extracted (the file is a problem-interview transcript with no
+  delegations — LLM correctly returned an empty extraction per the V1
+  contract: "If the Text block contains no future assignment with a
+  concrete deliverable, return {"tasks":[]}").
+
+Final test gate after Round 12: **520 pass** (442 agent unit + 4 agent
+e2e + 74 backend; +15 from Round 11's 505).

@@ -8,6 +8,7 @@ import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { PendingReviewBanner } from "@/components/layout/PendingReviewBanner";
 import { cn } from "@/lib/utils";
 import { usePendingReviewCount } from "@/lib/usePendingReviewCount";
+import { useAccountMode } from "@/lib/useAccountMode";
 
 const nav = [
   { href: "/tasks", label: "Tasks", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" },
@@ -38,6 +39,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // one fetch, two presentations.
   const { count: pendingCount } = usePendingReviewCount();
 
+  // Round 11 (2026-05-30): /team is only meaningful for the Lead persona
+  // who has opted into team mode. Hide the nav item otherwise so single-mode
+  // users have a cleaner sidebar. ``loaded=false`` (hook hasn't responded
+  // yet) is treated as "hide" — the safer default since /team without
+  // sent-folder data is empty noise.
+  const { mode, loaded: modeLoaded } = useAccountMode();
+  const visibleNav = nav.filter((item) => {
+    if (item.href !== "/team") return true;
+    return modeLoaded && mode === "team";
+  });
+
   return (
     <div className="min-h-screen flex">
       <aside className="w-56 shrink-0 border-r border-[var(--border)] bg-[var(--surface)] flex flex-col">
@@ -47,7 +59,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="flex-1 px-3 flex flex-col gap-0.5">
-          {nav.map((item) => {
+          {visibleNav.map((item) => {
             const active = pathname === item.href || pathname?.startsWith(item.href + "/");
             // Sidebar badge: only the Tasks entry shows a pending-count chip
             // for now (other nav items have their own dedicated indicators —

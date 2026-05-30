@@ -21,6 +21,16 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("REDIS_PUBLISH_PORT", "REDIS_PORT"),
     )
     encryption_key: str
+    # AWS S3 — for the upload pipeline (Round 12, 2026-05-30). The agent
+    # fetches uploaded files from S3 directly when processing an "upload"
+    # source-type job, mirrors the backend's storage path. Optional in
+    # config so the agent still boots in environments where uploads aren't
+    # configured (env vars missing → S3 client construction lazy-fails when
+    # an upload job actually arrives).
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = None
+    aws_region: str | None = None
+    aws_s3_bucket: str | None = None
     groq_api_key: str
     groq_model: str = "openai/gpt-oss-120b"
     groq_fallback_model: str = "llama-3.3-70b-versatile"

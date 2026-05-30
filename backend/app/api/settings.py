@@ -18,6 +18,11 @@ def _sync_config(user: User) -> dict:
         "gmail_interval": config.get("gmail_interval", defaults.sync_gmail_interval_minutes),
         "drive_interval": config.get("drive_interval", defaults.sync_drive_interval_minutes),
         "sync_profile": config.get("sync_profile", "balanced"),
+        # Default "single" — existing users keep current behaviour with no
+        # migration. The agent scheduler reads the same key directly from
+        # users.sync_config when deciding whether to enqueue a sent-folder
+        # sync job for this user.
+        "mode": config.get("mode", "single"),
     }
 
 

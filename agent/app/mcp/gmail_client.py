@@ -16,13 +16,30 @@ class GmailMCPClient(BaseMCPClient):
         last_sync_at: datetime | None = None,
         max_results: int = 50,
         sync_profile: str = "balanced",
+        folder: str = "inbox",
     ) -> list[dict[str, Any]]:
+        """List Gmail messages in either the inbox or the sent folder.
+
+        ``folder`` (Round 11, 2026-05-30) controls the Gmail query operator:
+
+          * ``"inbox"`` (default) — ``in:inbox`` with category and noise
+            filters applied. Matches the original behaviour exactly; existing
+            callers that don't pass ``folder`` are unaffected.
+          * ``"sent"`` — ``in:sent`` with no category filters (sent mail isn't
+            categorised in Gmail's primary/promotions/updates buckets) and
+            no noise filters (those target promotional mail, not outgoing).
+            Used by the Team-mode Lead persona to surface delegations
+            (tasks the user sent to teammates) in ``/team``.
+        """
         after_ts = int(last_sync_at.timestamp()) if last_sync_at else 0
-        _noise = "-category:promotions -category:updates -category:social -category:forums"
-        if sync_profile == "broad":
-            base = f"in:inbox {_noise}"
+        if folder == "sent":
+            base = "in:sent"
         else:
-            base = f"in:inbox category:primary {_noise}"
+            _noise = "-category:promotions -category:updates -category:social -category:forums"
+            if sync_profile == "broad":
+                base = f"in:inbox {_noise}"
+            else:
+                base = f"in:inbox category:primary {_noise}"
         query = f"after:{after_ts} {base}" if after_ts > 0 else base
         result = await self.call_tool(
             "list_messages",

@@ -90,6 +90,16 @@ def _apply_task_list_filters(
         stmt = stmt.join(SourceDocument, Task.source_doc_id == SourceDocument.id).where(
             SourceDocument.source_type == source
         )
+    else:
+        # Round 11 (2026-05-30): /tasks defaults to inbox-only — sent-context
+        # tasks (source_type='gmail_sent') belong in /team, not the personal
+        # task list. The user is the *assignor* of those, not the assignee,
+        # so they would be confusing noise in /tasks. To see them explicitly,
+        # callers pass ?source=gmail_sent. /team aggregation does not pass
+        # through this helper, so it continues to include both.
+        stmt = stmt.outerjoin(SourceDocument, Task.source_doc_id == SourceDocument.id).where(
+            (SourceDocument.source_type != "gmail_sent") | (SourceDocument.source_type.is_(None))
+        )
     return stmt
 
 
@@ -104,7 +114,7 @@ async def _count_filtered_tasks(db: AsyncSession, user_id: UUID, **filters) -> i
 async def list_tasks(
     response: Response,
     status: str | None = Query(None, pattern=r"^(pending|confirmed|dismissed)$"),
-    source: str | None = Query(None, pattern=r"^(gmail|drive|upload)$"),
+    source: str | None = Query(None, pattern=r"^(gmail|gmail_sent|drive|upload)$"),
     deadline_from: date | None = Query(None),
     deadline_to: date | None = Query(None),
     sort: str = Query("created_desc", pattern=r"^(deadline_asc|created_desc)$"),

@@ -280,3 +280,83 @@ def test_extraction_prompt_covers_lists_threads_and_delegated_performers(monkeyp
     assert "open checklist rows" in user_prompt
     assert "named performer is the assignee" in user_prompt
     assert "final resolved state" in user_prompt
+
+
+# ---------------------------------------------------------------------------
+# Round 11 (2026-05-30): sent-folder prompt routing
+# ---------------------------------------------------------------------------
+# Inbox / Drive / Upload contexts are received-by-the-user — the existing V1
+# system prompt's assignee-default applies (the user is the implicit
+# assignee unless someone else is named). Sent-folder context inverts that:
+# the user is the assignor (Lead delegating). EXTRACTION_SYSTEM_SENT
+# overrides the assignee default so the LLM extracts the named recipient,
+# never the current user. The router lives in _build_extraction_prompt and
+# branches on state.metadata.folder.
+
+def test_extraction_prompt_uses_v1_when_folder_is_inbox(monkeypatch) -> None:
+    extract_module = import_module("app.pipeline.nodes.extract_tasks")
+
+    class _NoGuidancePolicy:
+        validate_evidence_in_source = True
+        extraction_guidance = ""
+        version = "test"
+
+    monkeypatch.setattr(extract_module, "get_pipeline_policy", lambda: _NoGuidancePolicy())
+    system_prompt, _ = _build_extraction_prompt(
+        {
+            "source_type": "gmail",
+            "metadata": {"sent_at": "2026-04-20", "sender": "x@example.com", "subject": "x", "folder": "inbox"},
+            "errors": [],
+        },
+        "any text",
+    )
+    assert "SENT by the current user" not in system_prompt
+    assert "deterministic task extraction function" in system_prompt
+
+
+def test_extraction_prompt_uses_v1_when_folder_missing(monkeypatch) -> None:
+    """Every existing inbox call site (and every test) omits folder. The
+    router must default to V1 in that case so pre-Round-11 behaviour is
+    preserved exactly."""
+    extract_module = import_module("app.pipeline.nodes.extract_tasks")
+
+    class _NoGuidancePolicy:
+        validate_evidence_in_source = True
+        extraction_guidance = ""
+        version = "test"
+
+    monkeypatch.setattr(extract_module, "get_pipeline_policy", lambda: _NoGuidancePolicy())
+    system_prompt, _ = _build_extraction_prompt(
+        {
+            "source_type": "gmail",
+            "metadata": {"sent_at": "2026-04-20", "sender": "x@example.com", "subject": "x"},
+            "errors": [],
+        },
+        "any text",
+    )
+    assert "SENT by the current user" not in system_prompt
+
+
+def test_extraction_prompt_uses_sent_variant_when_folder_is_sent(monkeypatch) -> None:
+    extract_module = import_module("app.pipeline.nodes.extract_tasks")
+
+    class _NoGuidancePolicy:
+        validate_evidence_in_source = True
+        extraction_guidance = ""
+        version = "test"
+
+    monkeypatch.setattr(extract_module, "get_pipeline_policy", lambda: _NoGuidancePolicy())
+    system_prompt, _ = _build_extraction_prompt(
+        {
+            "source_type": "gmail",
+            "metadata": {"sent_at": "2026-04-20", "sender": "lead@example.com", "subject": "Delegations", "folder": "sent"},
+            "errors": [],
+        },
+        "Hương làm X by Friday; Minh fix Y by Monday.",
+    )
+    # Sent-variant signals that flip the assignee default
+    assert "SENT by the current user" in system_prompt
+    assert "user is the assignor" in system_prompt
+    assert "named recipient" in system_prompt
+    # And the contract preserved from V1 (JSON-only, no FYI)
+    assert "Return JSON only." in system_prompt

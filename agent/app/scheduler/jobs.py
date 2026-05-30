@@ -138,10 +138,16 @@ async def _get_sync_eligible_users() -> list[dict]:
                         continue
 
                 if access_token:
+                    cfg = user.sync_config or {}
                     users.append({
                         "id": str(user.id),
                         "access_token": str(access_token),
-                        "sync_profile": (user.sync_config or {}).get("sync_profile", "balanced"),
+                        "sync_profile": cfg.get("sync_profile", "balanced"),
+                        # Round 11: drives the per-user fan-out below — team-mode
+                        # users get an extra ``in:sent`` sync enqueued alongside
+                        # the standard inbox sync. Default "single" preserves
+                        # backward-compat for every existing user.
+                        "mode": cfg.get("mode", "single"),
                     })
     return users
 
@@ -155,17 +161,37 @@ async def sync_all_users_gmail() -> None:
         return
     r = aioredis.from_url(settings.redis_url, decode_responses=True)
     try:
+        enqueued = 0
         for u in users:
-            job = json.dumps({
+            # Default inbox job — every user gets this, mode-independent.
+            inbox_job = json.dumps({
                 "user_id": u["id"],
                 "source_type": "gmail",
                 "access_token": u["access_token"],
                 "triggered_by": "auto",
                 "time_range": "1d",
                 "sync_profile": u.get("sync_profile", "balanced"),
+                "folder": "inbox",
             })
-            await r.rpush(settings.pipeline_queue_name, job)
-        logger.info("auto-sync gmail: enqueued %d users", len(users))
+            await r.rpush(settings.pipeline_queue_name, inbox_job)
+            enqueued += 1
+            # Team-mode users additionally sync their ``in:sent`` folder so
+            # delegated tasks surface in /team. Sent-context tasks land with
+            # source_type='gmail_sent' so they don't pollute /tasks (see
+            # backend/app/api/tasks.py _apply_task_list_filters).
+            if u.get("mode") == "team":
+                sent_job = json.dumps({
+                    "user_id": u["id"],
+                    "source_type": "gmail",
+                    "access_token": u["access_token"],
+                    "triggered_by": "auto",
+                    "time_range": "1d",
+                    "sync_profile": u.get("sync_profile", "balanced"),
+                    "folder": "sent",
+                })
+                await r.rpush(settings.pipeline_queue_name, sent_job)
+                enqueued += 1
+        logger.info("auto-sync gmail: enqueued %d job(s) for %d user(s)", enqueued, len(users))
     finally:
         await r.aclose()
 

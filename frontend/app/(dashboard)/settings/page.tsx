@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { api } from "@/lib/api";
-import type { SettingsPayload } from "@/lib/types";
+import type { AccountMode, SettingsPayload } from "@/lib/types";
 
 export default function SettingsPage() {
   const [s, setS] = useState<SettingsPayload | null>(null);
   const [gmail, setGmail] = useState(15);
   const [drive, setDrive] = useState(30);
   const [profile, setProfile] = useState<"strict_work" | "balanced" | "broad">("balanced");
+  const [mode, setMode] = useState<AccountMode>("single");
+  const [savingMode, setSavingMode] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -20,6 +22,7 @@ export default function SettingsPage() {
       setGmail(data.gmail_interval);
       setDrive(data.drive_interval);
       setProfile(data.sync_profile);
+      setMode(data.mode);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -36,6 +39,27 @@ export default function SettingsPage() {
       toast.success("Saved");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Save failed");
+    }
+  }
+
+  async function saveMode(next: AccountMode) {
+    if (next === mode) return;
+    setSavingMode(true);
+    try {
+      const data = await api.settings.patch({ mode: next });
+      setS(data);
+      setMode(data.mode);
+      toast.success(
+        next === "team"
+          ? "Team mode enabled — sent-folder sync will start on the next tick."
+          : "Switched to single mode — sent-folder sync stopped.",
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not switch mode");
+      // Roll back the optimistic selection so the radio matches reality.
+      setMode(mode);
+    } finally {
+      setSavingMode(false);
     }
   }
 
@@ -100,6 +124,48 @@ export default function SettingsPage() {
             <option value="balanced">Balanced (recommended)</option>
             <option value="broad">Broad (higher recall, more noise)</option>
           </select>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6 space-y-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">Account mode</h2>
+        <div className="space-y-2">
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="mode"
+              value="single"
+              checked={mode === "single"}
+              onChange={() => void saveMode("single")}
+              disabled={savingMode}
+              className="mt-1 accent-[var(--accent)]"
+            />
+            <span className="text-sm">
+              <span className="block text-[var(--foreground)] font-medium">Single — personal inbox</span>
+              <span className="block text-[var(--muted)] text-xs">
+                Sync your Gmail inbox only. /team is hidden.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="mode"
+              value="team"
+              checked={mode === "team"}
+              onChange={() => void saveMode("team")}
+              disabled={savingMode}
+              className="mt-1 accent-[var(--accent)]"
+            />
+            <span className="text-sm">
+              <span className="block text-[var(--foreground)] font-medium">Team — Lead persona</span>
+              <span className="block text-[var(--muted)] text-xs">
+                Also sync your sent folder so delegations appear in /team. Sent-context tasks
+                stay out of /tasks. Switching is forward-only — historical sent emails are not
+                back-filled.
+              </span>
+            </span>
+          </label>
         </div>
       </section>
 

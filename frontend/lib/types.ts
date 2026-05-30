@@ -101,11 +101,17 @@ export interface PipelineRunRow {
   error_message: string | null;
 }
 
+export type AccountMode = "single" | "team";
+
 export interface SettingsPayload {
   gmail_interval: number;
   drive_interval: number;
   sync_profile: "strict_work" | "balanced" | "broad";
   google_connected: boolean;
+  // Round 11 (2026-05-30): controls visibility of the /team route and whether
+  // the user's Gmail sent folder is also synced (for the Lead persona).
+  // Default "single" from the backend matches every legacy user.
+  mode: AccountMode;
 }
 
 export interface CalendarEvent {

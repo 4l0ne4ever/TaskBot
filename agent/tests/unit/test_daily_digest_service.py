@@ -140,3 +140,90 @@ def test_empty_data_renders_clean_slate_message():
     text = render_digest_text(data)
     assert "Auto-confirmed today : 0" in text
     assert "(nothing — clean slate)" in text
+
+
+# ---------------------------------------------------------------------------
+# Round 12 (2026-05-30) — "Still outstanding" section (age-agnostic backlog)
+# ---------------------------------------------------------------------------
+# The today-only counters above don't show what's *still* outstanding from
+# earlier days. The new section lists every task that needs attention —
+# pending OR confirmed-with-any-missing-field — regardless of when it was
+# created. Capped at _MAX_OUTSTANDING_TASKS_SHOWN, sorted by urgency
+# (overdue → due-today → future → no-deadline).
+
+def test_outstanding_includes_pending_regardless_of_age():
+    today_pending = _task(status="pending", created_at=_WITHIN, title="today")
+    old_pending = _task(status="pending", created_at=_OUTSIDE, title="old")
+    data = build_digest_data([today_pending, old_pending], [], now=_NOW)
+    titles = [s["title"] for s in data["outstanding_samples"]]
+    assert "today" in titles and "old" in titles
+    assert data["outstanding_total"] == 2
+
+
+def test_outstanding_includes_confirmed_with_missing_fields():
+    """A confirmed task that's missing deadline/assignee still needs the
+    user's attention — that's the whole point of HITL surfacing."""
+    confirmed_missing = _task(
+        status="confirmed", confirmed_by="system",
+        missing_fields=["deadline"], title="needs deadline",
+    )
+    confirmed_complete = _task(
+        status="confirmed", confirmed_by="system",
+        missing_fields=[], title="fully fielded", assignee="Emily",
+        deadline=_NOW.date() + timedelta(days=3),
+    )
+    data = build_digest_data([confirmed_missing, confirmed_complete], [], now=_NOW)
+    titles = [s["title"] for s in data["outstanding_samples"]]
+    assert "needs deadline" in titles
+    assert "fully fielded" not in titles
+
+
+def test_outstanding_excludes_dismissed():
+    """User already triaged dismissed tasks — they shouldn't reappear."""
+    dismissed = _task(status="dismissed", title="dismissed")
+    pending = _task(status="pending", title="pending")
+    data = build_digest_data([dismissed, pending], [], now=_NOW)
+    titles = [s["title"] for s in data["outstanding_samples"]]
+    assert "dismissed" not in titles
+    assert "pending" in titles
+
+
+def test_outstanding_sorted_overdue_first_then_due_today_then_future_then_no_deadline():
+    yesterday = (_NOW.date() - timedelta(days=2)).isoformat()
+    today = _NOW.date().isoformat()
+    tomorrow = (_NOW.date() + timedelta(days=5)).isoformat()
+    no_dl   = _task(status="pending", title="no_dl", deadline=None)
+    future  = _task(status="pending", title="future", deadline=_NOW.date() + timedelta(days=5))
+    overdue = _task(status="pending", title="overdue", deadline=_NOW.date() - timedelta(days=2))
+    today_t = _task(status="pending", title="today_t", deadline=_NOW.date())
+    data = build_digest_data([no_dl, future, overdue, today_t], [], now=_NOW)
+    ordered_titles = [s["title"] for s in data["outstanding_samples"]]
+    # overdue → today → future → no_dl
+    assert ordered_titles == ["overdue", "today_t", "future", "no_dl"]
+
+
+def test_outstanding_capped_with_more_footer():
+    from app.services.daily_digest_service import _MAX_OUTSTANDING_TASKS_SHOWN
+    tasks = [_task(status="pending", title=f"t{i}") for i in range(_MAX_OUTSTANDING_TASKS_SHOWN + 5)]
+    data = build_digest_data(tasks, [], now=_NOW)
+    assert len(data["outstanding_samples"]) == _MAX_OUTSTANDING_TASKS_SHOWN
+    assert data["outstanding_total"] == _MAX_OUTSTANDING_TASKS_SHOWN + 5
+    text = render_digest_text(data)
+    assert "+ 5 more" in text
+
+
+def test_outstanding_section_omitted_from_html_when_empty():
+    """No empty 'Still outstanding' section — that would be noise alongside
+    the existing 'clean slate' line in the today section."""
+    data = build_digest_data([], [], now=_NOW)
+    html_out = render_digest_html(data)
+    assert "Still outstanding" not in html_out
+
+
+def test_outstanding_text_marks_overdue_and_today():
+    overdue = _task(status="pending", title="late", deadline=_NOW.date() - timedelta(days=3))
+    today_t = _task(status="pending", title="now", deadline=_NOW.date())
+    data = build_digest_data([overdue, today_t], [], now=_NOW)
+    text = render_digest_text(data)
+    assert "[OVERDUE]" in text
+    assert "[TODAY]" in text

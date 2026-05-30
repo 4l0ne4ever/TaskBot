@@ -199,7 +199,12 @@ export const api = {
   },
   settings: {
     get: () => apiFetch<SettingsPayload>("/settings"),
-    patch: (body: { gmail_interval?: number; drive_interval?: number; sync_profile?: "strict_work" | "balanced" | "broad" }) =>
+    patch: (body: {
+      gmail_interval?: number;
+      drive_interval?: number;
+      sync_profile?: "strict_work" | "balanced" | "broad";
+      mode?: "single" | "team";
+    }) =>
       apiFetch<SettingsPayload>("/settings", { method: "PATCH", body: JSON.stringify(body) }),
     disconnect: () => apiFetch<{ message: string }>("/settings/disconnect", { method: "POST" }),
   },

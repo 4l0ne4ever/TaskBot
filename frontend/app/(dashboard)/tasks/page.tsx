@@ -8,7 +8,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import type { Conflict, Task } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
 
 function PriorityBadge({ priority }: { priority: string | null }) {
   if (!priority) return null;

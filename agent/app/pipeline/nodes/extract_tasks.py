@@ -6,6 +6,7 @@ from app.pipeline.llm import call_llm, llm_call_context
 from app.pipeline.policy import get_pipeline_policy
 from app.pipeline.prompts import (
     EXTRACTION_RETRY_HINT_V1,
+    EXTRACTION_SYSTEM_SENT,
     EXTRACTION_SYSTEM_V1,
     EXTRACTION_USER_V1,
 )
@@ -263,7 +264,17 @@ def _build_extraction_prompt(
     prompt_body = prompt_body.replace("{sent_at}", str(metadata.get("sent_at")))
     prompt_body = prompt_body.replace("{subject}", str(metadata.get("subject")))
     prompt_body = prompt_body.replace("{extraction_guidance}", guidance_block)
-    system_prompt = EXTRACTION_SYSTEM_V1
+    # Round 11 (2026-05-30): sent-folder mail uses an inverted assignee
+    # default (the current user is the *assignor*, not the assignee). Route
+    # to the SENT system prompt when the queue-consumer-supplied
+    # ``metadata.folder`` says so. Default remains the inbox/V1 prompt for
+    # every other source — Drive, uploads, and inbox-gmail are all
+    # received-by-the-user contexts where the V1 assignee-default applies.
+    system_prompt = (
+        EXTRACTION_SYSTEM_SENT
+        if str(metadata.get("folder") or "").lower() == "sent"
+        else EXTRACTION_SYSTEM_V1
+    )
     user_prompt = prompt_body
     if with_retry_hint:
         user_prompt = user_prompt + "\n\n" + EXTRACTION_RETRY_HINT_V1

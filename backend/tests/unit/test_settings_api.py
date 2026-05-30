@@ -111,3 +111,65 @@ def test_disconnect_already_disconnected() -> None:
     r = client.post("/settings/disconnect")
     assert r.status_code == 200
     assert r.json()["message"] == "Already disconnected"
+
+
+# ---------------------------------------------------------------------------
+# Account mode (Round 11, 2026-05-30) — single vs team
+# ---------------------------------------------------------------------------
+# Mode lives in users.sync_config["mode"] with no migration. Default is
+# "single" so every existing user keeps their current behaviour. Switching to
+# "team" turns on the sent-folder sync and unhides the /team route. Switching
+# is forward-only data-wise (no backfill of historical sent emails) but the
+# enum itself accepts either direction so a user can revert their choice.
+
+def test_get_settings_defaults_mode_to_single_for_legacy_users() -> None:
+    """Existing users whose sync_config predates the mode field must read as
+    'single' — no migration, behaviour preserved."""
+    user = _make_user(sync_config={"gmail_interval": 15, "drive_interval": 30})
+    db = _FakeDB(user)
+    client = TestClient(_build_app(db, user))
+    r = client.get("/settings")
+    assert r.status_code == 200
+    assert r.json()["mode"] == "single"
+
+
+def test_get_settings_returns_persisted_team_mode() -> None:
+    user = _make_user(sync_config={"gmail_interval": 15, "drive_interval": 30, "mode": "team"})
+    db = _FakeDB(user)
+    client = TestClient(_build_app(db, user))
+    r = client.get("/settings")
+    assert r.status_code == 200
+    assert r.json()["mode"] == "team"
+
+
+def test_patch_settings_can_switch_mode_to_team() -> None:
+    user = _make_user()
+    db = _FakeDB(user)
+    client = TestClient(_build_app(db, user))
+    r = client.patch("/settings", json={"mode": "team"})
+    assert r.status_code == 200
+    assert r.json()["mode"] == "team"
+    # And the persisted shape is correct (mode keyed alongside the existing
+    # interval fields, not replacing them).
+    assert user.sync_config["mode"] == "team"
+    assert user.sync_config["gmail_interval"] == 15
+
+
+def test_patch_settings_can_switch_mode_back_to_single() -> None:
+    """Reverting team → single is permitted at the schema level (the
+    'forward-only' guarantee is about data backfill, not about which enum
+    transitions are allowed)."""
+    user = _make_user(sync_config={"gmail_interval": 15, "drive_interval": 30, "mode": "team"})
+    db = _FakeDB(user)
+    client = TestClient(_build_app(db, user))
+    r = client.patch("/settings", json={"mode": "single"})
+    assert r.status_code == 200
+    assert r.json()["mode"] == "single"
+
+
+def test_patch_settings_rejects_unknown_mode() -> None:
+    user = _make_user()
+    db = _FakeDB(user)
+    client = TestClient(_build_app(db, user))
+    r = client.patch("/settings", json={"mode": "enterprise"})
+    assert r.status_code == 422  # FastAPI / Pydantic validation error
