@@ -455,3 +455,28 @@ end-to-end.
    and multi-source conflict on real cross-platform, multi-author traffic; and
    measure single-pass vs. self-consistency vs. provider-pinned strategies
    side-by-side on a multi-week longitudinal trace.
+7. **Task-detail source-pane date displays the sync timestamp, not the email's
+   ``sent_at``** (observed 2026-05-30 on the dogfood account: source-pane label
+   read `5/29/2026` for an email that arrived earlier in May). The email's
+   `sent_at` is already parsed by `parse_input` and threaded into pipeline
+   state, but the task model does not persist it as a column — fixing it
+   requires either a new `tasks.received_at` column or a join read-through to
+   `source_documents`. Showing the time-of-day alongside the date is the same
+   change. Low-risk polish, deferred from the 2026-05-30 lock to keep the
+   thesis runway intact.
+8. **Deadline edit input is a plain ``YYYY-MM-DD`` text field**, no date-picker.
+   Works correctly but is clunkier than a native ``<input type="date">``
+   widget. Deferred — same lock as #7.
+9. **No daily end-of-day digest email.** Phase 8.3 shipped a Weekly Brief
+   (Manager summary, sent via the user's own ``gmail.send`` scope). A sibling
+   *daily* digest at 18:00 ICT — "N auto-confirmed, M need review, K conflicts
+   resolved today" — is a defensible enterprise feature for the Anna persona
+   but is a multi-hour add (APScheduler cron + email template + opt-in
+   setting + tests). Deferred to post-defence enhancement.
+10. **No dedicated ``missing_deadline`` status / filter dropdown option.**
+    The ``missing_fields`` array on each task already records whether deadline
+    or assignee is missing, and the post-2026-05-30 row-prominence work
+    surfaces these rows visually with an amber tint and left border. A
+    first-class status enum value (or a status-filter dropdown option
+    "Missing deadline") would let users filter on it directly. Deferred —
+    not blocking, not regressing.

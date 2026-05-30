@@ -34,6 +34,14 @@ export default function TasksPage() {
   const [cleaning, setCleaning] = useState(false);
   const [status, setStatus] = useState<string>("");
   const [source, setSource] = useState<string>("");
+  // Client-side filter on Task.missing_fields. Composes with the server-side
+  // status filter — e.g. "Pending" + "Missing deadline" surfaces just the
+  // pending tasks that also lack a deadline. Kept client-side because the
+  // backend has no missing_fields index and the typical page (50 tasks) is
+  // tiny enough that client filtering is imperceptible. Drawback: only the
+  // current page is filtered, so a "Missing" selection may show fewer rows
+  // than the global truth — acceptable trade-off vs. a new backend index.
+  const [missing, setMissing] = useState<string>("");
   const [sort, setSort] = useState<string>("created_desc");
   const [page, setPage] = useState(1);
 
@@ -64,8 +72,18 @@ export default function TasksPage() {
     }
   }, [status, source, sort, page]);
 
-  useEffect(() => { setPage(1); }, [status, source, sort]);
+  useEffect(() => { setPage(1); }, [status, source, sort, missing]);
   useEffect(() => { void load(page); }, [load, page]);
+
+  // Client-side missing-fields filter applied on top of the fetched page.
+  const visibleTasks = useMemo(() => {
+    if (!missing) return tasks;
+    return tasks.filter((t) => {
+      const fields = t.missing_fields ?? [];
+      if (missing === "any") return fields.length > 0;
+      return fields.includes(missing);
+    });
+  }, [tasks, missing]);
 
   async function confirmTask(id: string) {
     setTasks((prev) => prev.map((t) => t.id === id ? { ...t, status: "confirmed", confirmed_by: "user" } : t));
@@ -145,6 +163,20 @@ export default function TasksPage() {
           </select>
         </label>
         <label className="space-y-1">
+          <span className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">Missing</span>
+          <select
+            value={missing}
+            onChange={(e) => setMissing(e.target.value)}
+            className="bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+            title="Filter to tasks that are missing one or more fields"
+          >
+            <option value="">All</option>
+            <option value="deadline">Missing deadline</option>
+            <option value="assignee">Missing assignee</option>
+            <option value="any">Any missing field</option>
+          </select>
+        </label>
+        <label className="space-y-1">
           <span className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">Source</span>
           <select
             value={source}
@@ -219,8 +251,23 @@ export default function TasksPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border)]">
-                {tasks.map((t) => (
-                  <tr key={t.id} className="group hover:bg-[var(--card-hover)] transition-colors">
+                {visibleTasks.map((t) => {
+                  // A task needs the user's attention when it's still pending
+                  // OR when it was kept by graceful degradation but is missing
+                  // a deadline/assignee. Both cases benefit from a row-level
+                  // visual signal so the user spots them in a long list without
+                  // having to scan every chip.
+                  const needsReview = t.status === "pending" || (t.missing_fields?.length ?? 0) > 0;
+                  return (
+                  <tr
+                    key={t.id}
+                    className={cn(
+                      "group transition-colors",
+                      needsReview
+                        ? "bg-amber-500/[0.04] hover:bg-amber-500/[0.08] [&_td:first-child]:border-l-2 [&_td:first-child]:border-l-amber-500/60"
+                        : "hover:bg-[var(--card-hover)]"
+                    )}
+                  >
                     <td className="px-4 py-3">
                       <Link href={`/tasks/${t.id}`} className="text-[var(--accent)] hover:underline font-medium">
                         {t.title}
@@ -302,7 +349,8 @@ export default function TasksPage() {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     weekly_brief_enabled: bool = False
     weekly_brief_day_of_week: str = "mon"
     weekly_brief_hour: int = 7
+    # Daily Digest (Round 9, 2026-05-30): end-of-day self-sent summary of the
+    # day's task activity. Enabled by default per the locked-scope override.
+    # 11 UTC = 18:00 ICT (the dogfood user's local timezone). Same self-send
+    # model as the Weekly Brief — uses the user's own gmail.send scope.
+    daily_digest_enabled: bool = True
+    daily_digest_hour: int = 11
     langsmith_api_key: str | None = None
     langsmith_tracing: bool = True
     langsmith_project: str = "taskExtractor"

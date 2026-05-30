@@ -137,15 +137,20 @@ export default function TaskDetailPage() {
 
         <div className="space-y-2 pt-2 border-t border-[var(--border)]">
           <label className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
-            Deadline (YYYY-MM-DD)
+            Deadline
           </label>
           <div className="flex gap-2">
+            {/* Native HTML5 date picker — browser-provided calendar UI, no
+                extra dependency. ``Task.deadline`` is already stored as a
+                ``YYYY-MM-DD`` string, which is exactly what
+                ``input type="date"`` consumes and emits, so no value
+                normalization is needed and the existing save handler is
+                untouched. Empty string clears the deadline. */}
             <input
-              type="text"
+              type="date"
               value={deadline}
               onChange={(e) => setDeadline(e.target.value)}
-              placeholder="2026-04-15"
-              className="flex-1 min-w-[10rem] bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+              className="flex-1 min-w-[10rem] bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] [color-scheme:dark]"
             />
             <button
               type="button"
@@ -187,7 +192,30 @@ export default function TaskDetailPage() {
                         {source.source_type}
                       </span>
                       <span className="text-[var(--muted)] font-mono text-[10px]">{source.source_ref}</span>
-                      <span className="ml-auto text-[var(--muted)]">{new Date(source.created_at).toLocaleDateString()}</span>
+                      {(() => {
+                        // Prefer received_at (when Gmail says the email arrived)
+                        // and fall back to created_at (when TaskBot synced it).
+                        // Backfill is intentionally not done by migration 0012,
+                        // so older Drive rows and pre-migration emails still
+                        // surface a sensible date.
+                        const raw = source.received_at ?? source.created_at;
+                        const label = source.received_at ? "Received" : "Synced";
+                        const formatted = new Date(raw).toLocaleString(undefined, {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        });
+                        return (
+                          <span
+                            className="ml-auto text-[var(--muted)] tabular-nums"
+                            title={`${label}: ${new Date(raw).toISOString()}`}
+                          >
+                            {label} {formatted}
+                          </span>
+                        );
+                      })()}
                     </div>
                     <pre className="px-4 py-3 whitespace-pre-wrap font-sans text-[var(--muted)] leading-relaxed max-h-64 overflow-y-auto">
                       <HighlightExcerpt text={source.excerpt ?? "No text content available."} quote={task.evidence_quote} />

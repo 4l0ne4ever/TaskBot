@@ -59,7 +59,13 @@ export interface TaskSource {
   source_type: string;
   source_ref: string;
   excerpt: string | null;
+  // When TaskBot synced the document — fallback only.
   created_at: string;
+  // When the email/file was originally received (Gmail Date: header, parsed by
+  // queue_consumer._parse_gmail_message and persisted by migration 0012).
+  // Null for Drive sources until file modifiedTime is wired. UI prefers this
+  // over created_at when set.
+  received_at: string | null;
 }
 
 export type MergeableField = "title" | "description" | "assignee" | "deadline" | "priority";

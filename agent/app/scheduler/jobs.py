@@ -222,6 +222,34 @@ async def send_weekly_briefs() -> None:
         await r.aclose()
 
 
+async def send_daily_digests() -> None:
+    """Cron job: enqueue a Daily Digest for every sync-eligible user.
+
+    Sibling of ``send_weekly_briefs`` — same token-refresh path, same Redis
+    queue, same worker pattern. Fires once a day at ``settings.daily_digest_hour``
+    UTC (default 11 UTC = 18:00 ICT for the dogfood account's timezone).
+    """
+    import redis.asyncio as aioredis
+
+    users = await _get_sync_eligible_users()
+    if not users:
+        logger.debug("daily_digest: no eligible users")
+        return
+    r = aioredis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        for u in users:
+            job = json.dumps({
+                "user_id": u["id"],
+                "source_type": "daily_digest",
+                "access_token": u["access_token"],
+                "triggered_by": "schedule",
+            })
+            await r.rpush(settings.pipeline_queue_name, job)
+        logger.info("daily_digest: enqueued %d users", len(users))
+    finally:
+        await r.aclose()
+
+
 async def _gemini_keepalive_job() -> None:
     from app.pipeline.llm import warmup_gemini_connection
 
@@ -277,6 +305,18 @@ def start_scheduler() -> None:
             "scheduler: weekly brief on %s @ %02d:00 UTC",
             settings.weekly_brief_day_of_week,
             settings.weekly_brief_hour,
+        )
+    if settings.daily_digest_enabled:
+        scheduler.add_job(
+            send_daily_digests,
+            "cron",
+            hour=settings.daily_digest_hour,
+            id="daily_digest",
+            replace_existing=True,
+        )
+        logger.info(
+            "scheduler: daily digest @ %02d:00 UTC",
+            settings.daily_digest_hour,
         )
     scheduler.start()
     logger.info(

@@ -249,6 +249,7 @@ async def get_source_by_ref(
         source_ref=doc.source_ref,
         excerpt=_clean_excerpt(doc.raw_text),
         created_at=doc.created_at,
+        received_at=doc.received_at,
     )
 
 
@@ -366,6 +367,7 @@ async def get_task_source(
         source_ref=doc.source_ref,
         excerpt=_clean_excerpt(doc.raw_text),
         created_at=doc.created_at,
+        received_at=doc.received_at,
     )
 
 

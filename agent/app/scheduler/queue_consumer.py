@@ -634,6 +634,18 @@ async def _process_gmail_job(
                     else:
                         doc_id_val = uuid.uuid4()
                         run_id_val = uuid.uuid4()
+                        # Persist Gmail's parsed Date: / internalDate as received_at
+                        # so the task-detail Source panel can show when the email
+                        # actually arrived (not when TaskBot synced it). See
+                        # migration 0012. Empty string from _parse_gmail_message
+                        # means parsing failed — leave NULL in that case.
+                        sent_at_raw = parsed.get("sent_at") if isinstance(parsed, dict) else None
+                        received_at_dt = None
+                        if isinstance(sent_at_raw, str) and sent_at_raw:
+                            try:
+                                received_at_dt = datetime.fromisoformat(sent_at_raw)
+                            except ValueError:
+                                received_at_dt = None
                         doc = SourceDocument(
                             id=doc_id_val,
                             user_id=uid,
@@ -642,6 +654,7 @@ async def _process_gmail_job(
                             dedupe_group_id=str(parsed["thread_id"]),
                             content_hash=chash,
                             raw_text=body_html[:50_000] if isinstance(body_html, str) else None,
+                            received_at=received_at_dt,
                         )
                         session.add(doc)
                         await session.flush()
@@ -1043,6 +1056,26 @@ async def _process_weekly_brief_job(user_id: str, access_token: str) -> None:
     )
 
 
+async def _process_daily_digest_job(user_id: str, access_token: str) -> None:
+    """Build and self-send the Daily Digest (Round 9, 2026-05-30).
+
+    Sibling of ``_process_weekly_brief_job`` — same fail-safe semantics:
+    missing gmail.send scope yields a 403 which is recorded, not raised.
+    """
+    from app.services.daily_digest_service import async_send_daily_digest
+
+    result = await async_send_daily_digest(user_id, access_token)
+    if result.get("sent"):
+        logger.info("daily_digest ok: user=%s", user_id)
+        return
+    errors = result.get("errors") or ["unknown failure"]
+    record_pipeline_error(
+        source_type="daily_digest",
+        user_id=user_id,
+        error="; ".join(errors)[:300],
+    )
+
+
 async def consume_pipeline_jobs() -> None:
     """BLPOP loop: pick jobs from ``pipeline:jobs`` and dispatch."""
     r = await _get_redis()
@@ -1075,6 +1108,11 @@ async def consume_pipeline_jobs() -> None:
             if source == "weekly_brief":
                 logger.info("processing weekly_brief job for user %s", user_id)
                 await _process_weekly_brief_job(user_id, token)
+                continue
+
+            if source == "daily_digest":
+                logger.info("processing daily_digest job for user %s", user_id)
+                await _process_daily_digest_job(user_id, token)
                 continue
 
             time_range = job.get("time_range", "1d")

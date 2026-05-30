@@ -50,6 +50,10 @@ class TaskSourceResponse(BaseModel):
     source_ref: str
     excerpt: str | None
     created_at: datetime
+    # When the email/file was originally received (parsed from Gmail Date:
+    # header for emails; null for Drive files until file modifiedTime is
+    # wired). Frontend prefers this over created_at for display when set.
+    received_at: datetime | None = None
 
 
 class TeamMemberStats(BaseModel):

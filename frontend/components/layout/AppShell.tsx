@@ -5,7 +5,9 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { SyncStatusIndicator } from "@/components/layout/SyncStatusIndicator";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
+import { PendingReviewBanner } from "@/components/layout/PendingReviewBanner";
 import { cn } from "@/lib/utils";
+import { usePendingReviewCount } from "@/lib/usePendingReviewCount";
 
 const nav = [
   { href: "/tasks", label: "Tasks", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" },
@@ -31,6 +33,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, signOut } = useAuth();
   const pageTitle = nav.find((n) => pathname === n.href || pathname?.startsWith(n.href + "/"))?.label ?? "Dashboard";
 
+  // Pending-review HITL signal — drives both the sidebar badge on the Tasks
+  // nav item and the in-app banner above the main content area. One hook,
+  // one fetch, two presentations.
+  const { count: pendingCount } = usePendingReviewCount();
+
   return (
     <div className="min-h-screen flex">
       <aside className="w-56 shrink-0 border-r border-[var(--border)] bg-[var(--surface)] flex flex-col">
@@ -42,19 +49,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <nav className="flex-1 px-3 flex flex-col gap-0.5">
           {nav.map((item) => {
             const active = pathname === item.href || pathname?.startsWith(item.href + "/");
+            // Sidebar badge: only the Tasks entry shows a pending-count chip
+            // for now (other nav items have their own dedicated indicators —
+            // sync status is shown in the header, conflicts has its own page).
+            const badgeCount = item.href === "/tasks" ? pendingCount : 0;
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-all duration-150",
+                  "flex items-center justify-between gap-2.5 rounded-lg px-3 py-2 text-sm transition-all duration-150",
                   active
                     ? "bg-[var(--accent-muted)] text-[var(--accent)] font-medium"
                     : "text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-[var(--foreground)]"
                 )}
               >
-                <NavIcon d={item.icon} />
-                {item.label}
+                <span className="flex items-center gap-2.5">
+                  <NavIcon d={item.icon} />
+                  {item.label}
+                </span>
+                {badgeCount > 0 && (
+                  <span
+                    className="rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[10px] font-semibold leading-none px-1.5 py-1 min-w-[1.25rem] text-center tabular-nums"
+                    aria-label={`${badgeCount} tasks pending review`}
+                    title={`${badgeCount} tasks pending review`}
+                  >
+                    {badgeCount > 99 ? "99+" : badgeCount}
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -82,7 +104,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <ThemeToggle />
           </div>
         </header>
-        <main className="flex-1 p-6 overflow-auto">{children}</main>
+        <main className="flex-1 p-6 overflow-auto">
+          {/* Persistent HITL surface — visible across every dashboard page so
+              the user is never more than one click away from reviewing pending
+              tasks. The banner suppresses itself on /tasks because the user is
+              already in the right place. */}
+          {pendingCount > 0 && !pathname?.startsWith("/tasks") && (
+            <PendingReviewBanner count={pendingCount} />
+          )}
+          {children}
+        </main>
       </div>
     </div>
   );

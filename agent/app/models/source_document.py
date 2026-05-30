@@ -20,6 +20,11 @@ class SourceDocument(Base):
     processed_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
     pipeline_run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # When the email was actually received by Google (parsed from the Date:
+    # header or the message's internalDate). Distinct from created_at, which
+    # is when TaskBot synced it. Nullable because Drive sync doesn't populate
+    # this yet (file modifiedTime is a defensible analog but is future work).
+    received_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         Index(
