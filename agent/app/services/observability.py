@@ -76,7 +76,8 @@ def probe_redis_health() -> bool:
     ``False`` when unreachable; returns ``True`` if Redis responded or if
     observability is disabled (disabled ≠ broken).
     """
-    global _redis_unavailable
+    # _redis_unavailable is mutated by _mark_redis_unavailable, not here,
+    # so no `global` declaration is needed.
     if not settings.redis_observability_enabled:
         return True
     if _redis_unavailable:
@@ -110,7 +111,6 @@ def _redis_store(fn) -> None:
     Catches all exceptions so observability never crashes the pipeline — any
     failure from the Redis client or the callback is treated as unavailability.
     """
-    global _redis_unavailable
     if _redis_unavailable:
         return
     if not settings.redis_observability_enabled:

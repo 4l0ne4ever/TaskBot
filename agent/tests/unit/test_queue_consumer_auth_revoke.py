@@ -70,22 +70,21 @@ class _FakeRedis:
 
 
 @pytest.fixture
-def queue_consumer(monkeypatch: pytest.MonkeyPatch):
+def auth_mod(monkeypatch: pytest.MonkeyPatch):
     import importlib
 
-    mod = importlib.import_module("app.scheduler.queue_consumer")
-    return mod
+    return importlib.import_module("app.scheduler.auth")
 
 
 def _install(monkeypatch: pytest.MonkeyPatch, module, fake: _FakeRedis) -> None:
     async def _fake_redis() -> _FakeRedis:
         return fake
 
-    monkeypatch.setattr(module, "_get_redis", _fake_redis)
+    monkeypatch.setattr(module, "get_redis", _fake_redis)
 
 
-def test_is_auth_revoked_error_recognizes_401_variants(queue_consumer):
-    m = queue_consumer._is_auth_revoked_error
+def test_is_auth_revoked_error_recognizes_401_variants(auth_mod):
+    m = auth_mod.is_auth_revoked_error
     assert m("MCP call failed [401]: {'detail': 'Invalid Credentials'}") is True
     assert m("oauth error: invalid_grant") is True
     assert m("HTTP 401 Unauthorized") is True
@@ -93,33 +92,33 @@ def test_is_auth_revoked_error_recognizes_401_variants(queue_consumer):
     assert m("token revoked by user") is True
 
 
-def test_is_auth_revoked_error_ignores_other_failures(queue_consumer):
-    m = queue_consumer._is_auth_revoked_error
+def test_is_auth_revoked_error_ignores_other_failures(auth_mod):
+    m = auth_mod.is_auth_revoked_error
     assert m("MCP call failed [500]: Internal Server Error") is False
     assert m("pipeline daily quota (TPD) hit") is False
     assert m("timeout after 30s") is False
     assert m("") is False
 
 
-def test_streak_increments_and_disables_at_threshold(queue_consumer, monkeypatch):
+def test_streak_increments_and_disables_at_threshold(auth_mod, monkeypatch):
     fake = _FakeRedis()
-    _install(monkeypatch, queue_consumer, fake)
+    _install(monkeypatch, auth_mod, fake)
     # Force threshold=3 so we don't drift when the default changes.
     monkeypatch.setattr(
-        queue_consumer.settings, "mcp_auth_revoke_streak_threshold", 3
+        auth_mod.settings, "mcp_auth_revoke_streak_threshold", 3
     )
     monkeypatch.setattr(
-        queue_consumer.settings, "mcp_auth_revoke_disable_ttl_seconds", 3600
+        auth_mod.settings, "mcp_auth_revoke_disable_ttl_seconds", 3600
     )
 
     async def _run():
-        s1, d1 = await queue_consumer._record_mcp_auth_outcome(
+        s1, d1 = await auth_mod.record_mcp_auth_outcome(
             "u1", "gmail", auth_error=True
         )
-        s2, d2 = await queue_consumer._record_mcp_auth_outcome(
+        s2, d2 = await auth_mod.record_mcp_auth_outcome(
             "u1", "gmail", auth_error=True
         )
-        s3, d3 = await queue_consumer._record_mcp_auth_outcome(
+        s3, d3 = await auth_mod.record_mcp_auth_outcome(
             "u1", "gmail", auth_error=True
         )
         return (s1, d1), (s2, d2), (s3, d3)
@@ -133,13 +132,13 @@ def test_streak_increments_and_disables_at_threshold(queue_consumer, monkeypatch
     )
 
 
-def test_success_path_clears_streak(queue_consumer, monkeypatch):
+def test_success_path_clears_streak(auth_mod, monkeypatch):
     fake = _FakeRedis()
     fake.store["mcp:auth_streak:u1:gmail"] = 2
-    _install(monkeypatch, queue_consumer, fake)
+    _install(monkeypatch, auth_mod, fake)
 
     async def _run():
-        return await queue_consumer._record_mcp_auth_outcome(
+        return await auth_mod.record_mcp_auth_outcome(
             "u1", "gmail", auth_error=False
         )
 
@@ -148,16 +147,16 @@ def test_success_path_clears_streak(queue_consumer, monkeypatch):
     assert "mcp:auth_streak:u1:gmail" not in fake.store
 
 
-def test_gmail_and_drive_streaks_are_independent(queue_consumer, monkeypatch):
+def test_gmail_and_drive_streaks_are_independent(auth_mod, monkeypatch):
     fake = _FakeRedis()
-    _install(monkeypatch, queue_consumer, fake)
-    monkeypatch.setattr(queue_consumer.settings, "mcp_auth_revoke_streak_threshold", 2)
+    _install(monkeypatch, auth_mod, fake)
+    monkeypatch.setattr(auth_mod.settings, "mcp_auth_revoke_streak_threshold", 2)
 
     async def _run():
-        await queue_consumer._record_mcp_auth_outcome("u1", "gmail", auth_error=True)
-        await queue_consumer._record_mcp_auth_outcome("u1", "gmail", auth_error=True)
+        await auth_mod.record_mcp_auth_outcome("u1", "gmail", auth_error=True)
+        await auth_mod.record_mcp_auth_outcome("u1", "gmail", auth_error=True)
         # drive should still be 0 — Google can revoke one scope without the other
-        return await queue_consumer._is_sync_disabled_for_auth("u1", "drive")
+        return await auth_mod.is_sync_disabled_for_auth("u1", "drive")
 
     disabled_drive = asyncio.run(_run())
     assert disabled_drive is None
@@ -165,21 +164,21 @@ def test_gmail_and_drive_streaks_are_independent(queue_consumer, monkeypatch):
 
 
 def test_flag_user_auth_revoked_emits_distinct_pipeline_error(
-    queue_consumer, monkeypatch
+    auth_mod, monkeypatch
 ):
     fake = _FakeRedis()
-    _install(monkeypatch, queue_consumer, fake)
-    monkeypatch.setattr(queue_consumer.settings, "mcp_auth_revoke_streak_threshold", 1)
+    _install(monkeypatch, auth_mod, fake)
+    monkeypatch.setattr(auth_mod.settings, "mcp_auth_revoke_streak_threshold", 1)
 
     captured: list[dict[str, Any]] = []
 
     def _capture(**kwargs: Any) -> None:
         captured.append(kwargs)
 
-    monkeypatch.setattr(queue_consumer, "record_pipeline_error", _capture)
+    monkeypatch.setattr(auth_mod, "record_pipeline_error", _capture)
 
     asyncio.run(
-        queue_consumer._flag_user_auth_revoked(
+        auth_mod.flag_user_auth_revoked(
             "u1", "gmail", "MCP call failed [401]: Invalid Credentials"
         )
     )

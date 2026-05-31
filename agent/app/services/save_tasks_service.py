@@ -1,6 +1,6 @@
 import asyncio
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 
 from sqlalchemy import select
 
@@ -26,12 +26,12 @@ def _parse_deadline(value: object) -> date | None:
         return None
 
 
-def _coerce_deadline_time(value: object) -> "time | None":
+def _coerce_deadline_time(value: object) -> time | None:
     """Round 13: normalize_tasks emits a ``datetime.time`` (or None) in the
     ``deadline_time`` field. Pass it through to the Task row unchanged when
     present, else None. Strings "HH:MM" / "HH:MM:SS" are also accepted in
     case a caller (test, future API) hands us serialized form."""
-    from datetime import time as _time
+    _time = time  # local alias keeps the body identical to its prior form
     if value is None:
         return None
     if isinstance(value, _time):

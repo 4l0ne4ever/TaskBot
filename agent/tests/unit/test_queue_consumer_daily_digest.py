@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 
-from app.scheduler import queue_consumer as qc
+from app.scheduler.processors import daily_digest as dd
 
 _USER_ID = "22222222-2222-2222-2222-222222222222"
 
@@ -24,9 +24,9 @@ def test_daily_digest_success_records_no_error(monkeypatch) -> None:
         return {"sent": True, "errors": [], "data": {}}
 
     monkeypatch.setattr("app.services.daily_digest_service.async_send_daily_digest", _sent)
-    monkeypatch.setattr(qc, "record_pipeline_error", lambda **k: calls["errors"].append(k))
+    monkeypatch.setattr(dd, "record_pipeline_error", lambda **k: calls["errors"].append(k))
 
-    asyncio.run(qc._process_daily_digest_job(_USER_ID, "tok"))
+    asyncio.run(dd.process_daily_digest_job(_USER_ID, "tok"))
     assert calls["errors"] == []
 
 
@@ -41,9 +41,9 @@ def test_daily_digest_failure_records_user_actionable_error(monkeypatch) -> None
         }
 
     monkeypatch.setattr("app.services.daily_digest_service.async_send_daily_digest", _failed)
-    monkeypatch.setattr(qc, "record_pipeline_error", lambda **k: calls["errors"].append(k))
+    monkeypatch.setattr(dd, "record_pipeline_error", lambda **k: calls["errors"].append(k))
 
-    asyncio.run(qc._process_daily_digest_job(_USER_ID, "tok"))
+    asyncio.run(dd.process_daily_digest_job(_USER_ID, "tok"))
     assert len(calls["errors"]) == 1
     rec = calls["errors"][0]
     assert rec["source_type"] == "daily_digest"

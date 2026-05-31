@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 
-from app.scheduler import queue_consumer as qc
+from app.scheduler.processors import weekly_brief as wb
 
 _USER_ID = "22222222-2222-2222-2222-222222222222"
 
@@ -23,9 +23,9 @@ def test_weekly_brief_success_records_no_error(monkeypatch) -> None:
         return {"sent": True, "errors": [], "data": {}}
 
     monkeypatch.setattr("app.services.weekly_brief_service.async_send_weekly_brief", _sent)
-    monkeypatch.setattr(qc, "record_pipeline_error", lambda **k: calls["errors"].append(k))
+    monkeypatch.setattr(wb, "record_pipeline_error", lambda **k: calls["errors"].append(k))
 
-    asyncio.run(qc._process_weekly_brief_job(_USER_ID, "tok"))
+    asyncio.run(wb.process_weekly_brief_job(_USER_ID, "tok"))
     assert calls["errors"] == []
 
 
@@ -36,9 +36,9 @@ def test_weekly_brief_failure_records_error(monkeypatch) -> None:
         return {"sent": False, "errors": ["weekly_brief send failed: [403] insufficient scope"], "data": {}}
 
     monkeypatch.setattr("app.services.weekly_brief_service.async_send_weekly_brief", _failed)
-    monkeypatch.setattr(qc, "record_pipeline_error", lambda **k: calls["errors"].append(k))
+    monkeypatch.setattr(wb, "record_pipeline_error", lambda **k: calls["errors"].append(k))
 
-    asyncio.run(qc._process_weekly_brief_job(_USER_ID, "tok"))
+    asyncio.run(wb.process_weekly_brief_job(_USER_ID, "tok"))
     assert len(calls["errors"]) == 1
     rec = calls["errors"][0]
     assert rec["source_type"] == "weekly_brief"

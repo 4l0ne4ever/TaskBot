@@ -16,11 +16,10 @@ field validation, fail-path), not the pipeline itself (which has its own
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import patch
 
 import pytest
 
-from app.scheduler import queue_consumer as qc
+from app.scheduler.processors import upload as upload_mod
 
 _USER_ID = "11111111-1111-1111-1111-111111111111"
 _DOC_ID = "22222222-2222-2222-2222-222222222222"
@@ -33,15 +32,15 @@ def stubs(monkeypatch):
     handler exercises its own logic without external dependencies."""
     captured = {"statuses": [], "fetched": False, "invoked": False, "session_used": False}
 
-    # The status writer is inlined inside ``_process_upload_job`` and uses
-    # ``_get_redis()``; we intercept by stubbing the redis client itself.
+    # The status writer is inlined inside ``process_upload_job`` and uses
+    # ``get_redis()``; we intercept by stubbing the redis client itself.
     class _FakeRedis:
         async def set(self, key, value):
             # Key format: "upload:status:<upload_id>"
             uid = key.rsplit(":", 1)[-1]
             captured["statuses"].append((uid, value))
     async def fake_get_redis(): return _FakeRedis()
-    monkeypatch.setattr("app.scheduler.queue_consumer._get_redis", fake_get_redis)
+    monkeypatch.setattr(upload_mod, "get_redis", fake_get_redis)
 
     # Stub boto3.client → an object whose get_object returns 5 bytes.
     class _Body:
@@ -53,14 +52,13 @@ def stubs(monkeypatch):
         def get_object(self, **kw):
             return {"Body": _Body()}
 
-    import app.scheduler.queue_consumer as qcm
     monkeypatch.setattr("boto3.client", lambda *a, **kw: _S3())
 
     # Pretend AWS is configured.
-    monkeypatch.setattr(qcm.settings, "aws_s3_bucket", "test-bucket", raising=False)
-    monkeypatch.setattr(qcm.settings, "aws_region", "us-east-1", raising=False)
-    monkeypatch.setattr(qcm.settings, "aws_access_key_id", "x", raising=False)
-    monkeypatch.setattr(qcm.settings, "aws_secret_access_key", "y", raising=False)
+    monkeypatch.setattr(upload_mod.settings, "aws_s3_bucket", "test-bucket", raising=False)
+    monkeypatch.setattr(upload_mod.settings, "aws_region", "us-east-1", raising=False)
+    monkeypatch.setattr(upload_mod.settings, "aws_access_key_id", "x", raising=False)
+    monkeypatch.setattr(upload_mod.settings, "aws_secret_access_key", "y", raising=False)
 
     # Stub the DB session helper — handler only uses it to insert a PipelineRun.
     class _FakeSession:
@@ -72,24 +70,24 @@ def stubs(monkeypatch):
     class _FakeBegin:
         async def __aenter__(self): return None
         async def __aexit__(self, *exc): return False
-    monkeypatch.setattr(qcm, "AsyncSessionLocal", _FakeSession)
+    monkeypatch.setattr(upload_mod, "AsyncSessionLocal", _FakeSession)
 
     # Stub the pipeline invocation.
     async def fake_invoke(state):
         captured["invoked"] = True
         captured["state"] = state
         return state
-    monkeypatch.setattr(qcm, "_invoke_pipeline", fake_invoke)
+    monkeypatch.setattr(upload_mod, "invoke_pipeline", fake_invoke)
 
-    # Stub _mark_run_failed (only used on error path).
+    # Stub mark_run_failed (only used on error path).
     async def fake_mark_failed(*a, **kw): pass
-    monkeypatch.setattr(qcm, "_mark_run_failed", fake_mark_failed)
+    monkeypatch.setattr(upload_mod, "mark_run_failed", fake_mark_failed)
 
     return captured
 
 
 def test_upload_happy_path_flips_status_extracting_then_done(stubs):
-    asyncio.run(qc._process_upload_job(
+    asyncio.run(upload_mod.process_upload_job(
         _USER_ID,
         source_doc_id=_DOC_ID, s3_key="path/to/x.pdf", file_name="x.pdf", upload_id=_UPLOAD_ID,
     ))
@@ -100,7 +98,7 @@ def test_upload_happy_path_flips_status_extracting_then_done(stubs):
 
 
 def test_upload_state_carries_bytes_and_filename_to_pipeline(stubs):
-    asyncio.run(qc._process_upload_job(
+    asyncio.run(upload_mod.process_upload_job(
         _USER_ID,
         source_doc_id=_DOC_ID, s3_key="x.pdf", file_name="report.pdf", upload_id=_UPLOAD_ID,
     ))
@@ -116,9 +114,9 @@ def test_upload_state_carries_bytes_and_filename_to_pipeline(stubs):
 def test_upload_failure_flips_status_to_failed(stubs, monkeypatch):
     async def boom(state):
         raise RuntimeError("PDF parse failed")
-    monkeypatch.setattr(qc, "_invoke_pipeline", boom)
+    monkeypatch.setattr(upload_mod, "invoke_pipeline", boom)
     with pytest.raises(RuntimeError, match="PDF parse failed"):
-        asyncio.run(qc._process_upload_job(
+        asyncio.run(upload_mod.process_upload_job(
             _USER_ID,
             source_doc_id=_DOC_ID, s3_key="x.pdf", file_name="x.pdf", upload_id=_UPLOAD_ID,
         ))
@@ -129,9 +127,9 @@ def test_upload_failure_flips_status_to_failed(stubs, monkeypatch):
 
 
 def test_upload_raises_when_aws_not_configured(stubs, monkeypatch):
-    monkeypatch.setattr(qc.settings, "aws_s3_bucket", None, raising=False)
+    monkeypatch.setattr(upload_mod.settings, "aws_s3_bucket", None, raising=False)
     with pytest.raises(RuntimeError, match="AWS S3 not configured"):
-        asyncio.run(qc._process_upload_job(
+        asyncio.run(upload_mod.process_upload_job(
             _USER_ID,
             source_doc_id=_DOC_ID, s3_key="x.pdf", file_name="x.pdf", upload_id=_UPLOAD_ID,
         ))

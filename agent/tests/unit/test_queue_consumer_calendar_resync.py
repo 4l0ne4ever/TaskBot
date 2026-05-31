@@ -13,7 +13,7 @@ import asyncio
 
 import pytest
 
-from app.scheduler import queue_consumer as qc
+from app.scheduler.processors import calendar_resync as cr
 
 _TASK_ID = "11111111-1111-1111-1111-111111111111"
 _USER_ID = "22222222-2222-2222-2222-222222222222"
@@ -23,7 +23,7 @@ def _patch_no_sleep(monkeypatch) -> None:
     async def _instant(_seconds):
         return None
 
-    monkeypatch.setattr(qc.asyncio, "sleep", _instant)
+    monkeypatch.setattr(cr.asyncio, "sleep", _instant)
 
 
 def test_calendar_resync_success_first_attempt(monkeypatch) -> None:
@@ -34,10 +34,10 @@ def test_calendar_resync_success_first_attempt(monkeypatch) -> None:
         return {"notifications_sent": [{"task_id": state["saved_task_ids"][0]}], "errors": []}
 
     monkeypatch.setattr("app.services.notification_service.async_dispatch_notifications", _ok)
-    monkeypatch.setattr(qc, "record_pipeline_error", lambda **k: calls["errors"].append(k))
+    monkeypatch.setattr(cr, "record_pipeline_error", lambda **k: calls["errors"].append(k))
     _patch_no_sleep(monkeypatch)
 
-    asyncio.run(qc._process_calendar_resync_job(_USER_ID, "tok", _TASK_ID))
+    asyncio.run(cr.process_calendar_resync_job(_USER_ID, "tok", _TASK_ID))
 
     assert calls["dispatch"] == 1
     assert calls["errors"] == []  # no permanent-failure record
@@ -54,10 +54,10 @@ def test_calendar_resync_retries_transient_then_succeeds(monkeypatch) -> None:
         return {"notifications_sent": [{"task_id": _TASK_ID}], "errors": []}
 
     monkeypatch.setattr("app.services.notification_service.async_dispatch_notifications", _flaky)
-    monkeypatch.setattr(qc, "record_pipeline_error", lambda **k: calls["errors"].append(k))
+    monkeypatch.setattr(cr, "record_pipeline_error", lambda **k: calls["errors"].append(k))
     _patch_no_sleep(monkeypatch)
 
-    asyncio.run(qc._process_calendar_resync_job(_USER_ID, "tok", _TASK_ID))
+    asyncio.run(cr.process_calendar_resync_job(_USER_ID, "tok", _TASK_ID))
 
     assert calls["dispatch"] == 2  # retried once, then succeeded
     assert calls["errors"] == []
@@ -71,10 +71,10 @@ def test_calendar_resync_auth_revoked_no_retry(monkeypatch) -> None:
         return {"notifications_sent": [], "errors": [f"dispatch_notifications failed for task {_TASK_ID}: MCP call failed [401] invalid_grant"]}
 
     monkeypatch.setattr("app.services.notification_service.async_dispatch_notifications", _auth_fail)
-    monkeypatch.setattr(qc, "record_pipeline_error", lambda **k: calls["errors"].append(k))
+    monkeypatch.setattr(cr, "record_pipeline_error", lambda **k: calls["errors"].append(k))
     _patch_no_sleep(monkeypatch)
 
-    asyncio.run(qc._process_calendar_resync_job(_USER_ID, "tok", _TASK_ID))
+    asyncio.run(cr.process_calendar_resync_job(_USER_ID, "tok", _TASK_ID))
 
     assert calls["dispatch"] == 1  # permanent — not retried
     assert len(calls["errors"]) == 1
@@ -89,11 +89,11 @@ def test_calendar_resync_exhausts_retries_records_error(monkeypatch) -> None:
         return {"notifications_sent": [], "errors": [f"dispatch_notifications failed for task {_TASK_ID}: timeout"]}
 
     monkeypatch.setattr("app.services.notification_service.async_dispatch_notifications", _always_transient)
-    monkeypatch.setattr(qc, "record_pipeline_error", lambda **k: calls["errors"].append(k))
+    monkeypatch.setattr(cr, "record_pipeline_error", lambda **k: calls["errors"].append(k))
     _patch_no_sleep(monkeypatch)
 
-    asyncio.run(qc._process_calendar_resync_job(_USER_ID, "tok", _TASK_ID))
+    asyncio.run(cr.process_calendar_resync_job(_USER_ID, "tok", _TASK_ID))
 
-    assert calls["dispatch"] == qc._CALENDAR_RESYNC_MAX_ATTEMPTS
+    assert calls["dispatch"] == cr._CALENDAR_RESYNC_MAX_ATTEMPTS
     assert len(calls["errors"]) == 1
     assert "exhausted" in calls["errors"][0]["error"]

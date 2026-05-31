@@ -22,7 +22,7 @@ def test_validate_tasks_adds_missing_fields() -> None:
 def test_validate_tasks_detects_conflict_with_similar_existing(monkeypatch) -> None:
     module = import_module("app.pipeline.nodes.validate_tasks")
     monkeypatch.setattr(
-        module,
+        import_module("app.pipeline.nodes.conflict_detectors"),
         "call_llm",
         lambda *_args, **_kwargs: '{"conflict_type":"deadline_conflict","description":"Different deadlines"}',
     )
@@ -50,7 +50,7 @@ def test_validate_tasks_detects_conflict_with_similar_existing(monkeypatch) -> N
 
 def test_validate_tasks_ignores_invalid_conflict_response(monkeypatch) -> None:
     module = import_module("app.pipeline.nodes.validate_tasks")
-    monkeypatch.setattr(module, "call_llm", lambda *_args, **_kwargs: "invalid-json")
+    monkeypatch.setattr(import_module("app.pipeline.nodes.conflict_detectors"), "call_llm", lambda *_args, **_kwargs: "invalid-json")
 
     result = validate_tasks(
         {
@@ -160,7 +160,7 @@ def test_validate_tasks_marks_abstain_and_skips_conflict_call(monkeypatch) -> No
         calls["count"] += 1
         return '{"conflict_type":"deadline_conflict","description":"Different deadlines"}'
 
-    monkeypatch.setattr(module, "call_llm", _fake_call_llm)
+    monkeypatch.setattr(import_module("app.pipeline.nodes.conflict_detectors"), "call_llm", _fake_call_llm)
     result = validate_tasks(
         {
             "normalized_tasks": [
@@ -189,7 +189,7 @@ def test_validate_tasks_detects_intra_batch_reassignment(monkeypatch) -> None:
     ``superseded_by`` and an assignee_conflict is recorded."""
     module = import_module("app.pipeline.nodes.validate_tasks")
     monkeypatch.setattr(
-        module,
+        import_module("app.pipeline.nodes.conflict_detectors"),
         "call_llm",
         lambda *_args, **_kwargs: '{"conflict_type":"assignee_conflict","description":"reassigned"}',
     )
@@ -241,7 +241,7 @@ def test_validate_tasks_intra_batch_skips_dissimilar_titles(monkeypatch) -> None
         calls["count"] += 1
         return '{"conflict_type":"assignee_conflict","description":"x"}'
 
-    monkeypatch.setattr(module, "call_llm", _fake_call_llm)
+    monkeypatch.setattr(import_module("app.pipeline.nodes.conflict_detectors"), "call_llm", _fake_call_llm)
 
     result = validate_tasks(
         {
@@ -273,7 +273,7 @@ def test_validate_tasks_intra_batch_no_conflict_keeps_both(monkeypatch) -> None:
     must remain active, no conflict record emitted."""
     module = import_module("app.pipeline.nodes.validate_tasks")
     monkeypatch.setattr(
-        module,
+        import_module("app.pipeline.nodes.conflict_detectors"),
         "call_llm",
         lambda *_args, **_kwargs: '{"conflict_type":"no_conflict","description":null}',
     )
@@ -313,7 +313,7 @@ def test_validate_tasks_intra_batch_respects_budget(monkeypatch) -> None:
         calls["count"] += 1
         return '{"conflict_type":"assignee_conflict","description":"x"}'
 
-    monkeypatch.setattr(module, "call_llm", _fake_call_llm)
+    monkeypatch.setattr(import_module("app.pipeline.nodes.conflict_detectors"), "call_llm", _fake_call_llm)
 
     from app.pipeline import policy as policy_mod
 
@@ -388,7 +388,7 @@ def _stub_conflict_llm(monkeypatch, conflict_type: str = "assignee_conflict") ->
     """Make every ``call_llm`` invocation return a fixed conflict classification."""
     module = import_module("app.pipeline.nodes.validate_tasks")
     monkeypatch.setattr(
-        module,
+        import_module("app.pipeline.nodes.conflict_detectors"),
         "call_llm",
         lambda *_a, **_k: f'{{"conflict_type":"{conflict_type}","description":"reassigned"}}',
     )
@@ -468,7 +468,7 @@ def test_thread_marker_without_title_similarity_emits_no_conflict(monkeypatch) -
         return '{"conflict_type":"assignee_conflict","description":"x"}'
 
     module = import_module("app.pipeline.nodes.validate_tasks")
-    monkeypatch.setattr(module, "call_llm", _fake)
+    monkeypatch.setattr(import_module("app.pipeline.nodes.conflict_detectors"), "call_llm", _fake)
 
     result = validate_tasks(
         {
@@ -570,7 +570,7 @@ def test_inter_doc_marker_does_not_invent_conflict_without_title_match(monkeypat
         return '{"conflict_type":"assignee_conflict","description":"x"}'
 
     module = import_module("app.pipeline.nodes.validate_tasks")
-    monkeypatch.setattr(module, "call_llm", _fake)
+    monkeypatch.setattr(import_module("app.pipeline.nodes.conflict_detectors"), "call_llm", _fake)
 
     result = validate_tasks(
         {

@@ -9,7 +9,17 @@ from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
 
 from app.db.base import Base
-from app.models import Conflict, PipelineRun, SourceDocument, SyncState, Task, User
+# Side-effect import: registers every model on ``Base.metadata`` so Alembic's
+# ``--autogenerate`` can diff the current schema against the model graph. The
+# names are unused at this scope; pyflakes is told to ignore the apparent gap.
+from app.models import (  # noqa: F401
+    Conflict,
+    PipelineRun,
+    SourceDocument,
+    SyncState,
+    Task,
+    User,
+)
 
 # Same repo-root `.env` as `app.config.Settings` (Alembic does not import Settings — avoid requiring every secret for migrations).
 _REPO_ROOT = Path(__file__).resolve().parents[4]

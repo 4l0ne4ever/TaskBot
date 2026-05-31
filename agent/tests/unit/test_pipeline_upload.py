@@ -30,8 +30,7 @@ def test_pipeline_upload_pdf_mock(monkeypatch) -> None:
             '"priority":null,"confidence":0.88,"uncertainty":null}]'
         ),
     )
-    monkeypatch.setattr(
-        validate_mod, "call_llm",
+    monkeypatch.setattr(import_module("app.pipeline.nodes.conflict_detectors"), "call_llm",
         lambda *_a, **_kw: '{"conflict_type":"no_conflict","description":null}',
     )
 
@@ -72,8 +71,7 @@ def test_pipeline_upload_text_content(monkeypatch) -> None:
             '"priority":"high","confidence":0.9,"uncertainty":null}]'
         ),
     )
-    monkeypatch.setattr(
-        validate_mod, "call_llm",
+    monkeypatch.setattr(import_module("app.pipeline.nodes.conflict_detectors"), "call_llm",
         lambda *_a, **_kw: '{"conflict_type":"no_conflict","description":null}',
     )
 

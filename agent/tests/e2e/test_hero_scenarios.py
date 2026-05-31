@@ -101,8 +101,7 @@ def test_scenario1_multi_source_conflict_through_real_validate_node(monkeypatch)
     )
     # No LLM conflict round-trip should be needed for a single task, but stub it
     # to guarantee zero network if the intra-batch path ever reaches for it.
-    monkeypatch.setattr(
-        validate_mod, "call_llm", lambda *_a, **_k: '{"conflict_type":"no_conflict","description":null}'
+    monkeypatch.setattr(import_module("app.pipeline.nodes.conflict_detectors"), "call_llm", lambda *_a, **_k: '{"conflict_type":"no_conflict","description":null}'
     )
 
     state = {
@@ -156,8 +155,7 @@ def test_scenario1_no_conflict_when_only_same_platform_candidate(monkeypatch) ->
     monkeypatch.setattr(
         validate_mod, "load_cross_source_candidates_sync", lambda *_a, **_k: [same_platform_candidate]
     )
-    monkeypatch.setattr(
-        validate_mod, "call_llm", lambda *_a, **_k: '{"conflict_type":"no_conflict","description":null}'
+    monkeypatch.setattr(import_module("app.pipeline.nodes.conflict_detectors"), "call_llm", lambda *_a, **_k: '{"conflict_type":"no_conflict","description":null}'
     )
 
     state = {
@@ -206,8 +204,7 @@ def test_scenario3_high_confidence_doc_auto_confirms_through_full_pipeline(monke
     dispatch_mod = import_module("app.pipeline.nodes.dispatch_notifications")
 
     monkeypatch.setattr(extract_mod, "call_llm", lambda *_a, **_k: _HIGH_CONF_TASK_JSON)
-    monkeypatch.setattr(
-        validate_mod, "call_llm", lambda *_a, **_k: '{"conflict_type":"no_conflict","description":null}'
+    monkeypatch.setattr(import_module("app.pipeline.nodes.conflict_detectors"), "call_llm", lambda *_a, **_k: '{"conflict_type":"no_conflict","description":null}'
     )
     # No cross-source / same-source candidates → no conflict gate on auto-confirm.
     monkeypatch.setattr(validate_mod, "load_cross_source_candidates_sync", lambda *_a, **_k: [])
@@ -276,8 +273,7 @@ def test_scenario3_uncertain_doc_stays_pending_through_full_pipeline(monkeypatch
         '"priority":"medium","confidence":0.60,"uncertainty":null}]'
     )
     monkeypatch.setattr(extract_mod, "call_llm", lambda *_a, **_k: low_conf_json)
-    monkeypatch.setattr(
-        validate_mod, "call_llm", lambda *_a, **_k: '{"conflict_type":"no_conflict","description":null}'
+    monkeypatch.setattr(import_module("app.pipeline.nodes.conflict_detectors"), "call_llm", lambda *_a, **_k: '{"conflict_type":"no_conflict","description":null}'
     )
     monkeypatch.setattr(validate_mod, "load_cross_source_candidates_sync", lambda *_a, **_k: [])
 

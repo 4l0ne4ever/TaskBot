@@ -1,4 +1,4 @@
-"""Unit tests for ``_llm_pressure_snapshot`` — specifically the TPD/RPD path
+"""Unit tests for ``llm_pressure_snapshot`` — specifically the TPD/RPD path
 added in pass 6 to stop requeuing jobs that will deterministically fail until
 the next UTC day boundary.
 
@@ -29,30 +29,29 @@ class _FakeRedis:
 
 
 @pytest.fixture
-def queue_consumer(monkeypatch: pytest.MonkeyPatch):
+def pressure_mod(monkeypatch: pytest.MonkeyPatch):
     import importlib
 
-    mod = importlib.import_module("app.scheduler.queue_consumer")
-    return mod
+    return importlib.import_module("app.scheduler.pressure")
 
 
 def _patch_redis(monkeypatch: pytest.MonkeyPatch, module, rows: list[dict]) -> None:
     async def _fake() -> _FakeRedis:
         return _FakeRedis(rows)
 
-    monkeypatch.setattr(module, "_get_redis", _fake)
+    monkeypatch.setattr(module, "get_redis", _fake)
 
 
-def test_pressure_empty_window_is_healthy(queue_consumer, monkeypatch):
-    _patch_redis(monkeypatch, queue_consumer, [])
-    high, ratio, sample, daily = asyncio.run(queue_consumer._llm_pressure_snapshot())
+def test_pressure_empty_window_is_healthy(pressure_mod, monkeypatch):
+    _patch_redis(monkeypatch, pressure_mod, [])
+    high, ratio, sample, daily = asyncio.run(pressure_mod.llm_pressure_snapshot())
     assert high is False
     assert ratio == 0.0
     assert sample == 0
     assert daily is False
 
 
-def test_pressure_majority_tpd_triggers_daily_exhausted(queue_consumer, monkeypatch):
+def test_pressure_majority_tpd_triggers_daily_exhausted(pressure_mod, monkeypatch):
     rows = [
         {
             "model": "primary",
@@ -60,42 +59,42 @@ def test_pressure_majority_tpd_triggers_daily_exhausted(queue_consumer, monkeypa
             "rate_limit_kind": "tpd",
         }
     ] * 20
-    _patch_redis(monkeypatch, queue_consumer, rows)
-    high, ratio, sample, daily = asyncio.run(queue_consumer._llm_pressure_snapshot())
+    _patch_redis(monkeypatch, pressure_mod, rows)
+    high, ratio, sample, daily = asyncio.run(pressure_mod.llm_pressure_snapshot())
     assert high is True
     assert ratio == 1.0
     assert sample == 20
     assert daily is True, "majority-TPD window must flag daily_quota_exhausted"
 
 
-def test_pressure_tpm_only_does_not_flag_daily(queue_consumer, monkeypatch):
+def test_pressure_tpm_only_does_not_flag_daily(pressure_mod, monkeypatch):
     rows = [
         {"model": "p", "error": "429 tokens per minute (TPM)", "rate_limit_kind": "tpm"}
     ] * 20
-    _patch_redis(monkeypatch, queue_consumer, rows)
-    high, ratio, sample, daily = asyncio.run(queue_consumer._llm_pressure_snapshot())
+    _patch_redis(monkeypatch, pressure_mod, rows)
+    high, ratio, sample, daily = asyncio.run(pressure_mod.llm_pressure_snapshot())
     assert high is True
     assert daily is False, "TPM window must NOT flag daily_quota_exhausted"
 
 
-def test_pressure_mixed_window_falls_back_to_majority_rule(queue_consumer, monkeypatch):
+def test_pressure_mixed_window_falls_back_to_majority_rule(pressure_mod, monkeypatch):
     rows = (
         [{"model": "p", "error": "429 TPM", "rate_limit_kind": "tpm"}] * 6
         + [{"model": "p", "error": "429 TPD", "rate_limit_kind": "tpd"}] * 4
         + [{"model": "p", "error": None}] * 10
     )
-    _patch_redis(monkeypatch, queue_consumer, rows)
-    high, ratio, sample, daily = asyncio.run(queue_consumer._llm_pressure_snapshot())
+    _patch_redis(monkeypatch, pressure_mod, rows)
+    high, ratio, sample, daily = asyncio.run(pressure_mod.llm_pressure_snapshot())
     assert ratio == 0.5, "10 of 20 are rate-limited"
     assert high is True
     assert daily is False, "only 4/10 rate-limited are daily; not majority"
 
 
-def test_pressure_tiny_sample_never_flags_daily(queue_consumer, monkeypatch):
+def test_pressure_tiny_sample_never_flags_daily(pressure_mod, monkeypatch):
     # Threshold protects against a single stale TPD row freezing ingestion.
     rows = [{"model": "p", "error": "429 TPD", "rate_limit_kind": "tpd"}] * 2
-    _patch_redis(monkeypatch, queue_consumer, rows)
-    high, ratio, sample, daily = asyncio.run(queue_consumer._llm_pressure_snapshot())
+    _patch_redis(monkeypatch, pressure_mod, rows)
+    high, ratio, sample, daily = asyncio.run(pressure_mod.llm_pressure_snapshot())
     assert daily is False
 
 
@@ -107,7 +106,7 @@ def _today_ts() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def test_pressure_stale_tpd_from_yesterday_is_ignored(queue_consumer, monkeypatch):
+def test_pressure_stale_tpd_from_yesterday_is_ignored(pressure_mod, monkeypatch):
     """Core regression: TPD errors from a previous UTC day must NOT block today's
     syncs. Groq quota resets at UTC midnight — old-day errors in ``obs:llm:calls``
     are irrelevant and must be skipped."""
@@ -119,14 +118,14 @@ def test_pressure_stale_tpd_from_yesterday_is_ignored(queue_consumer, monkeypatc
             "rate_limit_kind": "tpd",
         }
     ] * 20
-    _patch_redis(monkeypatch, queue_consumer, rows)
-    high, ratio, sample, daily = asyncio.run(queue_consumer._llm_pressure_snapshot())
+    _patch_redis(monkeypatch, pressure_mod, rows)
+    high, ratio, sample, daily = asyncio.run(pressure_mod.llm_pressure_snapshot())
     assert sample == 0, "all entries are from yesterday → zero valid entries today"
     assert high is False
     assert daily is False, "stale TPD entries must not block today's syncs"
 
 
-def test_pressure_mixed_stale_and_fresh_only_counts_today(queue_consumer, monkeypatch):
+def test_pressure_mixed_stale_and_fresh_only_counts_today(pressure_mod, monkeypatch):
     """Yesterday's TPD errors + today's clean calls → healthy (only today's window counted)."""
     rows = (
         # 20 today's entries, no errors
@@ -134,14 +133,14 @@ def test_pressure_mixed_stale_and_fresh_only_counts_today(queue_consumer, monkey
         # 20 yesterday's TPD entries — should be invisible
         + [{"ts": _yesterday_ts(), "model": "p", "error": "429 TPD", "rate_limit_kind": "tpd"}] * 20
     )
-    _patch_redis(monkeypatch, queue_consumer, rows)
-    high, ratio, sample, daily = asyncio.run(queue_consumer._llm_pressure_snapshot())
+    _patch_redis(monkeypatch, pressure_mod, rows)
+    high, ratio, sample, daily = asyncio.run(pressure_mod.llm_pressure_snapshot())
     assert ratio == 0.0, "only today's clean calls should be counted"
     assert high is False
     assert daily is False
 
 
-def test_pressure_today_tpd_still_triggers(queue_consumer, monkeypatch):
+def test_pressure_today_tpd_still_triggers(pressure_mod, monkeypatch):
     """TPD errors from today still correctly flag daily_quota_exhausted."""
     rows = [
         {
@@ -151,20 +150,20 @@ def test_pressure_today_tpd_still_triggers(queue_consumer, monkeypatch):
             "rate_limit_kind": "tpd",
         }
     ] * 20
-    _patch_redis(monkeypatch, queue_consumer, rows)
-    high, ratio, sample, daily = asyncio.run(queue_consumer._llm_pressure_snapshot())
+    _patch_redis(monkeypatch, pressure_mod, rows)
+    high, ratio, sample, daily = asyncio.run(pressure_mod.llm_pressure_snapshot())
     assert high is True
     assert daily is True, "today's TPD majority must still flag exhausted"
 
 
-def test_pressure_no_ts_field_included_conservatively(queue_consumer, monkeypatch):
+def test_pressure_no_ts_field_included_conservatively(pressure_mod, monkeypatch):
     """Entries without a ``ts`` field are included in the window (conservative).
     This preserves backward compatibility for any entries written before the
     timestamp field was added."""
     rows = [
         {"model": "primary", "error": "429 tokens per day (TPD)", "rate_limit_kind": "tpd"}
     ] * 20
-    _patch_redis(monkeypatch, queue_consumer, rows)
-    high, ratio, sample, daily = asyncio.run(queue_consumer._llm_pressure_snapshot())
+    _patch_redis(monkeypatch, pressure_mod, rows)
+    high, ratio, sample, daily = asyncio.run(pressure_mod.llm_pressure_snapshot())
     assert sample == 20
     assert daily is True, "ts-less entries are included conservatively"

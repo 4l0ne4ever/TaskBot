@@ -73,9 +73,7 @@ def test_pipeline_full_flow_with_mock_llm_and_mock_mcp(monkeypatch) -> None:
             '"priority":"high","confidence":0.91,"uncertainty":null}]'
         ),
     )
-    monkeypatch.setattr(
-        validate_mod,
-        "call_llm",
+    monkeypatch.setattr(import_module("app.pipeline.nodes.conflict_detectors"), "call_llm",
         lambda *_args, **_kwargs: '{"conflict_type":"no_conflict","description":null}',
     )
 
