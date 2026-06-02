@@ -43,6 +43,9 @@ class TaskResponse(BaseModel):
     notification_sent: bool
     evidence_quote: str | None = None
     confirmed_by: str | None = None
+    # Phase 4 (no-deadline UX): Google-Tasks-like tracking state. Null in the
+    # API response means "todo" — the frontend defaults it for legacy rows.
+    progress_state: str | None = None
     source_doc_id: UUID | None
     source_type: str | None = None
     created_at: datetime
@@ -93,3 +96,5 @@ class TaskUpdate(BaseModel):
     priority: str | None = None
     uncertainty: TaskUncertainty | None = None
     status: str | None = Field(None, pattern=r"^(pending|confirmed|dismissed)$")
+    # Phase 4 — pattern-matched so a typo can't silently land in the column.
+    progress_state: str | None = Field(None, pattern=r"^(todo|in_progress|done)$")

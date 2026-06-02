@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { api } from "@/lib/api";
-import type { CalendarEvent } from "@/lib/types";
+import type { CalendarEvent, Task } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { emitTasksChanged } from "@/lib/usePendingReviewCount";
 import { EventModal } from "@/components/calendar/EventModal";
 import {
   WEEKDAYS,
@@ -16,6 +18,31 @@ import {
   statusIcon,
 } from "@/components/calendar/calendar-helpers";
 
+// Priority ordering for the "Needs deadline" sidebar. Tasks with a manual
+// urgency signal float to the top; null priority sinks. Inside a tier the
+// list keeps the API's default order (newest first).
+const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
+function priorityRank(p: string | null): number {
+  return p && p in PRIORITY_RANK ? PRIORITY_RANK[p] : 3;
+}
+
+// Date math for the quick-action buttons. Stays in local time because that's
+// what the date input shows; the backend stores YYYY-MM-DD without a tz so
+// the round-trip is symmetric.
+function addDays(base: Date, days: number): Date {
+  const d = new Date(base);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+function nextFriday(from: Date): Date {
+  // 0=Sun…5=Fri. Pick the *next* Friday (never today even if today IS Friday)
+  // so the button stays a forward-move action — picking today would silently
+  // duplicate "Today" when fired on Fridays.
+  const day = from.getDay();
+  const delta = ((5 - day + 7) % 7) || 7;
+  return addDays(from, delta);
+}
+
 export default function CalendarPage() {
   const [current, setCurrent] = useState(() => startOfMonth(new Date()));
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -23,6 +50,7 @@ export default function CalendarPage() {
   const [modalDate, setModalDate] = useState<string | null>(null);
   const [modalEvent, setModalEvent] = useState<CalendarEvent | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(fmt(new Date()));
+  const [noDeadlineTasks, setNoDeadlineTasks] = useState<Task[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -38,9 +66,26 @@ export default function CalendarPage() {
     }
   }, [current]);
 
+  // Backlog sidebar fetch: tasks with no deadline (so they can't appear on
+  // the grid) but with a priority signal that says "this matters". Loads
+  // independently of the month-scoped events fetch so paging the calendar
+  // doesn't re-trigger a backlog pull every time.
+  const loadNoDeadline = useCallback(async () => {
+    try {
+      const { tasks } = await api.tasks.list({ missing: "deadline", limit: 50 });
+      setNoDeadlineTasks(tasks.filter((t) => t.status !== "dismissed"));
+    } catch {
+      // Silent — non-critical sidebar signal, error toast would be noise.
+    }
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void loadNoDeadline();
+  }, [loadNoDeadline]);
 
   const eventsByDate = useMemo(() => {
     const map: Record<string, CalendarEvent[]> = {};
@@ -90,6 +135,28 @@ export default function CalendarPage() {
     setCurrent(startOfMonth(new Date()));
   }
 
+  // Quick-action: PATCH the task with a derived deadline (today / +1 day /
+  // next Friday). Optimistic — drop from the backlog list immediately so
+  // repeated clicks can't double-assign the same row, then refresh the
+  // month's events so the new entry shows on the grid (if it falls in
+  // ``current`` month). The pending-review badge also nudges because the
+  // task may have been pending until now.
+  async function setQuickDeadline(taskId: string, when: "today" | "tomorrow" | "friday") {
+    const now = new Date();
+    const target = when === "today" ? now : when === "tomorrow" ? addDays(now, 1) : nextFriday(now);
+    const iso = fmt(target);
+    setNoDeadlineTasks((prev) => prev.filter((t) => t.id !== taskId));
+    try {
+      await api.tasks.update(taskId, { deadline: iso });
+      toast.success(`Deadline set: ${iso}`);
+      void load();
+      emitTasksChanged();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to set deadline");
+      void loadNoDeadline();
+    }
+  }
+
   function openCreate(dateStr: string) {
     setModalEvent(null);
     setModalDate(dateStr);
@@ -122,6 +189,15 @@ export default function CalendarPage() {
       }),
     [eventsByDate, selectedDate],
   );
+
+  // Sort: high → medium → low → none, newest first within tier. Memoised
+  // because the sort happens on every render and the list can be ~50 rows
+  // when the inbox has been backlogged for a while.
+  const sortedNoDeadline = useMemo(() => {
+    return [...noDeadlineTasks].sort(
+      (a, b) => priorityRank(a.priority) - priorityRank(b.priority),
+    );
+  }, [noDeadlineTasks]);
 
   const selectedDateForGoogle = useMemo(() => {
     const [y, m, d] = selectedDate.split("-");
@@ -293,6 +369,67 @@ export default function CalendarPage() {
 
         {/* Sidebar: upcoming deadlines */}
         <div className="space-y-4">
+          {sortedNoDeadline.length > 0 && (
+            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
+              <div className="flex items-baseline justify-between mb-3">
+                <h3 className="text-sm font-semibold">Needs deadline</h3>
+                <span className="text-[10px] text-[var(--muted)]" title="Tasks not visible on the grid until a deadline is set">
+                  {sortedNoDeadline.length}
+                </span>
+              </div>
+              <div className="space-y-2 max-h-80 overflow-y-auto -mr-1 pr-1">
+                {sortedNoDeadline.map((t) => (
+                  <div
+                    key={t.id}
+                    className="rounded-lg border border-[var(--border)] p-2 space-y-1.5"
+                  >
+                    <div className="flex items-start gap-2">
+                      <Link
+                        href={`/tasks/${t.id}`}
+                        className="text-sm font-medium truncate flex-1 hover:text-[var(--accent)] transition-colors"
+                        title={t.title}
+                      >
+                        {t.title}
+                      </Link>
+                      {t.priority && (
+                        <span className={cn("shrink-0 text-[9px] uppercase font-semibold px-1.5 py-0.5 rounded border", priorityColor(t.priority))}>
+                          {t.priority}
+                        </span>
+                      )}
+                    </div>
+                    {t.assignee && (
+                      <p className="text-[10px] text-[var(--muted)] truncate">
+                        {t.assignee}
+                      </p>
+                    )}
+                    <div className="flex gap-1 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => void setQuickDeadline(t.id, "today")}
+                        className="text-[10px] rounded border border-[var(--border)] px-1.5 py-0.5 hover:bg-[var(--card-hover)] transition-colors"
+                      >
+                        Today
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void setQuickDeadline(t.id, "tomorrow")}
+                        className="text-[10px] rounded border border-[var(--border)] px-1.5 py-0.5 hover:bg-[var(--card-hover)] transition-colors"
+                      >
+                        Tomorrow
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void setQuickDeadline(t.id, "friday")}
+                        className="text-[10px] rounded border border-[var(--border)] px-1.5 py-0.5 hover:bg-[var(--card-hover)] transition-colors"
+                      >
+                        Fri
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
             <h3 className="text-sm font-semibold mb-3">Upcoming Deadlines</h3>
             {loading ? (

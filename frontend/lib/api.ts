@@ -81,6 +81,7 @@ function tasksQuery(params: {
   status?: string;
   source?: string;
   missing?: string;
+  priority?: string;
   sort?: string;
   limit?: number;
   offset?: number;
@@ -89,6 +90,7 @@ function tasksQuery(params: {
   if (params.status) q.set("status", params.status);
   if (params.source) q.set("source", params.source);
   if (params.missing) q.set("missing", params.missing);
+  if (params.priority) q.set("priority", params.priority);
   if (params.sort) q.set("sort", params.sort);
   if (params.limit != null) q.set("limit", String(params.limit));
   if (params.offset != null) q.set("offset", String(params.offset));
@@ -134,7 +136,7 @@ export const api = {
     logout: () => apiFetch<{ message: string }>("/auth/logout", { method: "POST" }),
   },
   tasks: {
-    list: async (params?: { status?: string; source?: string; missing?: string; sort?: string; limit?: number; offset?: number }) => {
+    list: async (params?: { status?: string; source?: string; missing?: string; priority?: string; sort?: string; limit?: number; offset?: number }) => {
       const { data, total } = await apiFetchList<Task[]>(`/tasks${tasksQuery(params ?? {})}`);
       return { tasks: data, total };
     },
@@ -144,7 +146,7 @@ export const api = {
       data: Partial<
         Pick<
           Task,
-          "title" | "description" | "assignee" | "deadline" | "deadline_time" | "deadline_v2" | "priority" | "uncertainty" | "status"
+          "title" | "description" | "assignee" | "deadline" | "deadline_time" | "deadline_v2" | "priority" | "uncertainty" | "status" | "progress_state"
         >
       >,
     ) =>

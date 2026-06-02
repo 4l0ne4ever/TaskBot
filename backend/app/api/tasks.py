@@ -29,6 +29,24 @@ _MULTI_WS_RE = re.compile(r"[ \t]{2,}")
 _CRLF_RE = re.compile(r"\r\n?")
 
 
+# Auto-priority thresholds — kept in lock-step with
+# ``agent/app/services/save_tasks_service._derive_priority_from_deadline``
+# so a task's urgency colour stays consistent whether the pipeline auto-
+# confirmed it or the user clicked Confirm. ≤2 days = high (tomorrow's
+# work), 3-7 = medium (this week), >7 = low (later).
+_PRIORITY_HIGH_DAYS = 2
+_PRIORITY_MEDIUM_DAYS = 7
+
+
+def _priority_from_deadline(deadline: date) -> str:
+    delta_days = (deadline - datetime.now(timezone.utc).date()).days
+    if delta_days <= _PRIORITY_HIGH_DAYS:
+        return "high"
+    if delta_days <= _PRIORITY_MEDIUM_DAYS:
+        return "medium"
+    return "low"
+
+
 def _clean_excerpt(raw: str | None) -> str | None:
     if not raw:
         return None
@@ -104,9 +122,18 @@ def _apply_task_list_filters(
     deadline_from: date | None,
     deadline_to: date | None,
     missing: str | None = None,
+    priority: str | None = None,
 ):
     if status:
         stmt = stmt.where(Task.status == status)
+    # ``priority="none"`` is the explicit no-priority bucket — distinct from
+    # leaving the filter at "All". Both are common queries: triage view picks
+    # "High", review view picks "None" to find tasks that still need a manual
+    # urgency call.
+    if priority == "none":
+        stmt = stmt.where(Task.priority.is_(None))
+    elif priority:
+        stmt = stmt.where(Task.priority == priority)
     if deadline_from:
         stmt = stmt.where(Task.deadline >= deadline_from)
     if deadline_to:
@@ -161,6 +188,7 @@ async def list_tasks(
     status: str | None = Query(None, pattern=r"^(pending|confirmed|dismissed)$"),
     source: str | None = Query(None, pattern=r"^(gmail|gmail_sent|drive|upload)$"),
     missing: str | None = Query(None, pattern=r"^(deadline|assignee|any)$"),
+    priority: str | None = Query(None, pattern=r"^(high|medium|low|none)$"),
     deadline_from: date | None = Query(None),
     deadline_to: date | None = Query(None),
     sort: str = Query("created_desc", pattern=r"^(deadline_asc|created_desc)$"),
@@ -175,6 +203,7 @@ async def list_tasks(
         "deadline_from": deadline_from,
         "deadline_to": deadline_to,
         "missing": missing,
+        "priority": priority,
     }
     total = await _count_filtered_tasks(db, current_user.id, **filters)
     response.headers["X-Total-Count"] = str(total)
@@ -347,6 +376,14 @@ async def update_task(
     # confirmed_by is controlled server-side — the client only sends status.
     if changes.get("status") == "confirmed":
         task.confirmed_by = "user"
+        # Mirror the agent's auto-priority rule (save_tasks_service._derive_
+        # priority_from_deadline): when a user manually confirms a task that
+        # has a deadline but no priority yet, infer urgency from the deadline
+        # so /calendar colour-codes it without forcing a second click. We do
+        # NOT override an existing priority — that was either LLM-extracted
+        # from message content (e.g. "URGENT") or set deliberately by the user.
+        if task.priority is None and task.deadline is not None:
+            task.priority = _priority_from_deadline(task.deadline)
     elif changes.get("status") == "pending":
         task.confirmed_by = None  # intentional revert clears badge signal
 

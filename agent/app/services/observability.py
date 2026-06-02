@@ -5,7 +5,7 @@ import os
 import random
 import time
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -158,6 +158,8 @@ def _record_langsmith_ingest_event(
                 pipe.hincrby(hkey, "http_5xx", 1)
         elif outcome == "transport_error":
             pipe.hincrby(hkey, "transport_error", 1)
+        elif outcome == "quota_exhausted_skipped":
+            pipe.hincrby(hkey, "quota_exhausted_skipped", 1)
         pipe.execute()
 
         ev = {
@@ -174,6 +176,35 @@ def _record_langsmith_ingest_event(
     _redis_store(_persist)
 
 
+# Monthly-quota short-circuit: once LangSmith returns "Monthly unique traces
+# usage limit exceeded" (free tier cap), every subsequent /runs POST will fail
+# the same way until the calendar-month rollover. Retrying 3× per call burns
+# ~3s of pipeline time per LLM call for guaranteed-to-fail attempts, which
+# slows sync visibly (UI shows 'syncing…' for minutes). Cache the exhausted
+# verdict and short-circuit until midnight UTC; daily reset is conservative
+# (the real reset is monthly) but safe — we just retry a day early.
+_langsmith_quota_exhausted_until: datetime | None = None
+
+
+def _langsmith_quota_exhausted() -> bool:
+    global _langsmith_quota_exhausted_until
+    if _langsmith_quota_exhausted_until is None:
+        return False
+    if datetime.now(UTC) >= _langsmith_quota_exhausted_until:
+        _langsmith_quota_exhausted_until = None
+        return False
+    return True
+
+
+def _mark_langsmith_quota_exhausted() -> None:
+    global _langsmith_quota_exhausted_until
+    now = datetime.now(UTC)
+    next_utc_midnight = (now + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    _langsmith_quota_exhausted_until = next_utc_midnight
+
+
 def _post_langsmith_run(payload: dict[str, Any]) -> None:
     """POST one run record to LangSmith with bounded exponential-backoff retry.
 
@@ -188,8 +219,20 @@ def _post_langsmith_run(payload: dict[str, Any]) -> None:
       ``obs:langsmith:ingest:counts`` so the SLO snapshot surfaces it.
     - Pipeline never blocks on LangSmith: the method returns normally
       regardless of outcome — tracing is a side channel.
+    - Monthly quota: when LangSmith returns 429 with "Monthly … usage limit
+      exceeded" body, mark the tenant exhausted until the next UTC day and
+      short-circuit further POSTs; retrying after a monthly cap just wastes
+      pipeline latency and floods worker logs (observed: ~3s added per LLM
+      call, sync UX feels stuck).
     """
     if not settings.langsmith_tracing or not settings.langsmith_api_key:
+        return
+    if _langsmith_quota_exhausted():
+        _record_langsmith_ingest_event(
+            outcome="quota_exhausted_skipped",
+            run_name=str(payload.get("name") or "unknown"),
+            detail="monthly_quota_short_circuit",
+        )
         return
     run_name = str(payload.get("name") or "unknown")
     headers = {
@@ -220,6 +263,17 @@ def _post_langsmith_run(payload: dict[str, Any]) -> None:
             last_status_code = resp.status_code
             last_detail = (resp.text or "")[:200] or None
             last_outcome = "http_error"
+            # Monthly free-tier cap: retry is guaranteed to fail until next
+            # month, and each retry pair adds ~1-3s to pipeline latency.
+            # Short-circuit the rest of this call AND every future call until
+            # the next UTC day.
+            if (
+                resp.status_code == 429
+                and "monthly" in (last_detail or "").lower()
+                and "limit" in (last_detail or "").lower()
+            ):
+                _mark_langsmith_quota_exhausted()
+                break
             # Permanent client errors — no point retrying
             if resp.status_code != 429 and 400 <= resp.status_code < 500:
                 break

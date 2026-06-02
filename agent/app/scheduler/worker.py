@@ -6,6 +6,12 @@ from app.scheduler.jobs import start_scheduler
 from app.scheduler.queue_consumer import consume_pipeline_jobs
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+# Silence the LangChain SDK's auto-tracing failure spam: when the LangSmith
+# free-tier monthly quota is hit, the SDK retries forever and dumps a long
+# multiline warning per LLM call. The retries don't block the pipeline, but
+# the noise drowns out real errors and adds disk pressure. Errors still log
+# at ERROR level if anything truly broken happens.
+logging.getLogger("langsmith.client").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 _settings = get_settings()
 

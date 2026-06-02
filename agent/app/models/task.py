@@ -35,6 +35,10 @@ class Task(Base):
     notification_sent: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     evidence_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
     confirmed_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Phase 4 (no-deadline UX): tracking column inspired by Google Tasks
+    # core features. Values: "todo" | "in_progress" | "done". NULL means
+    # legacy row → treated as "todo" by the UI.
+    progress_state: Mapped[str | None] = mapped_column(Text, nullable=True)
     previous_revision: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

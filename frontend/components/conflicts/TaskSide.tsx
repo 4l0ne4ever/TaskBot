@@ -66,9 +66,12 @@ export function TaskSide({ t }: { t: Task }) {
                 <p className="px-3 py-2 text-[var(--muted)]">Loading&hellip;</p>
               ) : src ? (
                 <>
-                  <div className="px-3 py-1.5 border-b border-[var(--border)] flex gap-2 items-center">
+                  <div className="px-3 py-1.5 border-b border-[var(--border)] flex gap-2 items-center flex-wrap">
                     <span className="uppercase text-[10px] font-semibold text-[var(--muted)]">{src.source_type}</span>
                     <span className="font-mono text-[10px] text-[var(--muted)]">{src.source_ref}</span>
+                    <span className="text-[10px] text-[var(--muted)] ml-auto">
+                      {new Date(src.received_at ?? src.created_at).toLocaleString()}
+                    </span>
                   </div>
                   <pre className="px-3 py-2 whitespace-pre-wrap font-sans text-[var(--muted)] leading-relaxed max-h-48 overflow-y-auto">
                     <HighlightExcerpt text={src.excerpt ?? "No text content."} quote={t.evidence_quote} />

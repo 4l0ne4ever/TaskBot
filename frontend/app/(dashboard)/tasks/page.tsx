@@ -7,22 +7,72 @@ import { api } from "@/lib/api";
 import { Pagination } from "@/components/ui/Pagination";
 import type { Conflict, Task } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { emitTasksChanged } from "@/lib/usePendingReviewCount";
 
 const PAGE_SIZE = 10;
 
-function PriorityBadge({ priority }: { priority: string | null }) {
-  if (!priority) return null;
+const PRIORITY_CLASSES: Record<string, string> = {
+  high: "bg-red-500/15 text-red-600 dark:text-red-300 hover:bg-red-500/25",
+  medium: "bg-amber-500/15 text-amber-600 dark:text-amber-300 hover:bg-amber-500/25",
+  low: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-500/25",
+};
+const PRIORITY_OPTIONS: { value: string | null; label: string }[] = [
+  { value: "high", label: "High" },
+  { value: "medium", label: "Medium" },
+  { value: "low", label: "Low" },
+  { value: null, label: "None" },
+];
+
+// Click-to-edit priority chip. Replaces the previous read-only badge so users
+// can override auto-derived priorities (and set them on the manual-deadline
+// path where the auto rule deliberately skipped). Sends an optimistic update
+// to the parent so the table re-renders without waiting on the PATCH.
+function PriorityPicker({
+  priority,
+  onChange,
+}: {
+  priority: string | null;
+  onChange: (next: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const label = priority ?? "set priority";
+  const colorClass = priority
+    ? PRIORITY_CLASSES[priority] ?? "bg-[var(--surface-2)] hover:bg-[var(--card-hover)]"
+    : "bg-[var(--surface-2)] text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--card-hover)]";
   return (
-    <span
-      className={cn(
-        "rounded-full text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5",
-        priority === "high" && "bg-red-500/15 text-red-600 dark:text-red-300",
-        priority === "medium" && "bg-amber-500/15 text-amber-600 dark:text-amber-300",
-        priority === "low" && "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"
+    <div className="relative inline-block">
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        className={cn(
+          "rounded-full text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 transition-colors cursor-pointer",
+          colorClass,
+        )}
+      >
+        {label}
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-20 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg overflow-hidden min-w-[7rem]">
+          {PRIORITY_OPTIONS.map((opt) => (
+            <button
+              key={opt.label}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { setOpen(false); if (opt.value !== priority) onChange(opt.value); }}
+              className={cn(
+                "block w-full text-left px-3 py-1.5 text-xs transition-colors",
+                opt.value === priority
+                  ? "bg-[var(--card-hover)] text-[var(--foreground)] font-medium"
+                  : "hover:bg-[var(--card-hover)] text-[var(--muted)] hover:text-[var(--foreground)]",
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       )}
-    >
-      {priority}
-    </span>
+    </div>
   );
 }
 
@@ -34,6 +84,11 @@ export default function TasksPage() {
   const [cleaning, setCleaning] = useState(false);
   const [status, setStatus] = useState<string>("");
   const [source, setSource] = useState<string>("");
+  // Phase 2 — banner counter: how many HIGH-priority tasks currently
+  // lack a deadline. Loaded independently from the paginated list so it
+  // reflects the global state even when the user has narrowed the view
+  // with other filters. Excludes dismissed tasks.
+  const [highNoDeadlineCount, setHighNoDeadlineCount] = useState(0);
   // Round 14 (2026-05-31): missing-fields filter is now sent to the backend
   // via ?missing=deadline|assignee|any. Pre-Round-14 it was client-side over
   // the already-paginated page — page 1 looked empty whenever no rows on
@@ -41,6 +96,7 @@ export default function TasksPage() {
   // ("1-10 of 25") suggested matches existed. Backend filter fixes both
   // the empty-page UX and the count-vs-content mismatch in one move.
   const [missing, setMissing] = useState<string>("");
+  const [priority, setPriority] = useState<string>("");
   const [sort, setSort] = useState<string>("created_desc");
   const [page, setPage] = useState(1);
 
@@ -58,7 +114,7 @@ export default function TasksPage() {
     try {
       const offset = (p - 1) * PAGE_SIZE;
       const [taskResult, c] = await Promise.all([
-        api.tasks.list({ status: status || undefined, source: source || undefined, missing: missing || undefined, sort, limit: PAGE_SIZE, offset }),
+        api.tasks.list({ status: status || undefined, source: source || undefined, missing: missing || undefined, priority: priority || undefined, sort, limit: PAGE_SIZE, offset }),
         api.conflicts.list({ resolved: false }),
       ]);
       setTasks(taskResult.tasks);
@@ -75,21 +131,82 @@ export default function TasksPage() {
     // re-render → no recreated callback → next fetch ships without the
     // filter. ``status`` / ``source`` / ``sort`` are in the same boat;
     // page-reset alone is not enough.
-  }, [status, source, sort, missing, page]);
+  }, [status, source, sort, missing, priority, page]);
 
-  useEffect(() => { setPage(1); }, [status, source, sort, missing]);
+  useEffect(() => { setPage(1); }, [status, source, sort, missing, priority]);
   useEffect(() => { void load(page); }, [load, page]);
+
+  // Phase 2 — load the high-priority-no-deadline counter independently of
+  // the page filters. Refresh on mount + on the cross-component
+  // ``taskbot:tasks:changed`` event (Confirm/Dismiss/Revert/Set-deadline
+  // dispatch it). Watching ``tasks`` directly would re-fire on every page
+  // change and filter switch — wasted round-trips for a value that only
+  // mutates on actual task changes.
+  const loadHighNoDeadlineCount = useCallback(async () => {
+    try {
+      const { total: t } = await api.tasks.list({
+        missing: "deadline",
+        priority: "high",
+        limit: 1,
+      });
+      setHighNoDeadlineCount(t);
+    } catch {
+      // Silent — banner is non-critical; missing the count is fine.
+    }
+  }, []);
+  useEffect(() => {
+    void loadHighNoDeadlineCount();
+    const onChanged = () => void loadHighNoDeadlineCount();
+    window.addEventListener("taskbot:tasks:changed", onChanged);
+    return () => window.removeEventListener("taskbot:tasks:changed", onChanged);
+  }, [loadHighNoDeadlineCount]);
+
+  // Phase 2 — click banner → apply the corresponding filters so the user
+  // lands on the exact rows the banner warned about. Resets pagination.
+  const focusHighNoDeadline = useCallback(() => {
+    setStatus("");
+    setSource("");
+    setMissing("deadline");
+    setPriority("high");
+    setSort("created_desc");
+    setPage(1);
+  }, []);
+  const isHighNoDeadlineFocused =
+    missing === "deadline" && priority === "high";
 
   // Round 14: backend now applies the missing-fields filter (see
   // ?missing=… in api.tasks.list), so the fetched page is already the
   // visible page. Variable kept for minimal diff in the table render.
   const visibleTasks = tasks;
 
+  // When the user has narrowed the list with a status filter, a mutation
+  // that pushes the task out of that filter should also pop it from the
+  // visible rows. Without this, confirming a Pending task left a stray
+  // "CONFIRMED" badge on the Pending page until the next reload.
+  const applyMutationToList = useCallback(
+    (id: string, patch: Partial<Task>, nextStatus: string) => {
+      setTasks((prev) => {
+        if (status && status !== nextStatus) {
+          // Row no longer matches the active filter — remove it instead of
+          // mutating in place. Also adjust the total counter so pagination
+          // stays consistent without waiting for the next fetch.
+          if (prev.some((t) => t.id === id)) {
+            setTotal((cur) => Math.max(0, cur - 1));
+          }
+          return prev.filter((t) => t.id !== id);
+        }
+        return prev.map((t) => (t.id === id ? { ...t, ...patch } : t));
+      });
+    },
+    [status],
+  );
+
   async function confirmTask(id: string) {
-    setTasks((prev) => prev.map((t) => t.id === id ? { ...t, status: "confirmed", confirmed_by: "user" } : t));
+    applyMutationToList(id, { status: "confirmed", confirmed_by: "user" }, "confirmed");
     try {
       await api.tasks.update(id, { status: "confirmed" });
       toast.success("Confirmed");
+      emitTasksChanged();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Update failed");
       void load(page);
@@ -97,10 +214,22 @@ export default function TasksPage() {
   }
 
   async function dismissTask(id: string) {
-    setTasks((prev) => prev.map((t) => t.id === id ? { ...t, status: "dismissed" } : t));
+    applyMutationToList(id, { status: "dismissed" }, "dismissed");
     try {
       await api.tasks.update(id, { status: "dismissed" });
       toast.success("Dismissed");
+      emitTasksChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Update failed");
+      void load(page);
+    }
+  }
+
+  async function updatePriority(id: string, next: string | null) {
+    setTasks((prev) => prev.map((t) => t.id === id ? { ...t, priority: next } : t));
+    try {
+      await api.tasks.update(id, { priority: next });
+      toast.success(next ? `Priority: ${next}` : "Priority cleared");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Update failed");
       void load(page);
@@ -108,10 +237,11 @@ export default function TasksPage() {
   }
 
   async function revertTask(id: string) {
-    setTasks((prev) => prev.map((t) => t.id === id ? { ...t, status: "pending", confirmed_by: null } : t));
+    applyMutationToList(id, { status: "pending", confirmed_by: null }, "pending");
     try {
       await api.tasks.update(id, { status: "pending" });
       toast.success("Reverted to pending");
+      emitTasksChanged();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Update failed");
       void load(page);
@@ -126,6 +256,7 @@ export default function TasksPage() {
       toast.success(`Deleted ${res.deleted} task(s)`);
       setPage(1);
       void load(1);
+      emitTasksChanged();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Clean failed");
     } finally {
@@ -148,6 +279,50 @@ export default function TasksPage() {
 
   return (
     <div className="space-y-6 max-w-6xl">
+      {highNoDeadlineCount > 0 && !isHighNoDeadlineFocused && (
+        <div
+          role="alert"
+          className="flex items-start gap-3 rounded-xl border border-red-500/40 bg-red-500/[0.06] px-4 py-3 text-sm"
+        >
+          <svg
+            className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
+            />
+          </svg>
+          <div className="flex-1">
+            <p className="font-medium text-red-600 dark:text-red-300">
+              {highNoDeadlineCount} high-priority task{highNoDeadlineCount === 1 ? "" : "s"} chưa có deadline
+            </p>
+            <p className="mt-0.5 text-xs text-[var(--muted)]">
+              High-priority work without a deadline doesn&apos;t land on the calendar. Pick a date so the team knows when it&apos;s due.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/calendar"
+              className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-xs text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-[var(--foreground)] transition-colors"
+              title="Open the calendar sidebar with Today/Tomorrow/Friday quick-set buttons"
+            >
+              Open calendar
+            </Link>
+            <button
+              type="button"
+              onClick={focusHighNoDeadline}
+              className="rounded-md bg-red-500/15 px-2.5 py-1 text-xs font-medium text-red-600 dark:text-red-300 hover:bg-red-500/25 transition-colors"
+            >
+              Review here →
+            </button>
+          </div>
+        </div>
+      )}
       <div className="flex flex-wrap items-end gap-3">
         <label className="space-y-1">
           <span className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">Status</span>
@@ -174,6 +349,21 @@ export default function TasksPage() {
             <option value="deadline">Missing deadline</option>
             <option value="assignee">Missing assignee</option>
             <option value="any">Any missing field</option>
+          </select>
+        </label>
+        <label className="space-y-1">
+          <span className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">Priority</span>
+          <select
+            value={priority}
+            onChange={(e) => setPriority(e.target.value)}
+            className="bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+            title="Filter by priority level — None matches tasks without a set priority"
+          >
+            <option value="">All</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+            <option value="none">None</option>
           </select>
         </label>
         <label className="space-y-1">
@@ -296,7 +486,10 @@ export default function TasksPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
-                        <PriorityBadge priority={t.priority} />
+                        <PriorityPicker
+                          priority={t.priority}
+                          onChange={(next) => void updatePriority(t.id, next)}
+                        />
                         {t.status === "confirmed" && t.confirmed_by === "system" && (
                           <span className="rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-300 text-[10px] font-medium px-2 py-0.5" title="Auto-confirmed by AI — click Revert to review manually">
                             Auto
@@ -322,13 +515,30 @@ export default function TasksPage() {
                     <td className="px-4 py-3 text-right whitespace-nowrap">
                       {t.status === "pending" ? (
                         <div className="flex gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            type="button"
-                            onClick={() => void confirmTask(t.id)}
-                            className="text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 transition-colors"
-                          >
-                            Confirm
-                          </button>
+                          {conflictTaskIds.has(t.id) ? (
+                            // Task has an open conflict with another task that
+                            // contradicts it (different deadline/assignee for
+                            // the same deliverable). Confirming one side here
+                            // would leave the conflict unresolved and would
+                            // auto-create a calendar event for a deliverable
+                            // whose deadline is still under dispute — point
+                            // the user to /conflicts to pick a side first.
+                            <Link
+                              href="/conflicts"
+                              className="text-xs font-medium text-yellow-600 dark:text-yellow-300 hover:underline transition-colors"
+                              title="Resolve the deadline/assignee conflict before confirming so the calendar doesn't get a disputed event"
+                            >
+                              Resolve conflict →
+                            </Link>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => void confirmTask(t.id)}
+                              className="text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 transition-colors"
+                            >
+                              Confirm
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => void dismissTask(t.id)}

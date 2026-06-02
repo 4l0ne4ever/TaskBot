@@ -26,6 +26,27 @@ def _parse_deadline(value: object) -> date | None:
         return None
 
 
+# Auto-priority thresholds (days from sync date). Rule chosen 2026-05-31 based
+# on Anna-persona feedback that <3-day deadlines need to surface first on the
+# calendar grid (visual triage) and >1-week items can be backgrounded. Only
+# applied at auto-confirm time when the LLM didn't already extract a priority
+# signal from the message content; user can always override on /tasks.
+_PRIORITY_HIGH_DAYS = 2
+_PRIORITY_MEDIUM_DAYS = 7
+
+
+def _derive_priority_from_deadline(deadline: date | None) -> str | None:
+    if deadline is None:
+        return None
+    today = datetime.now(UTC).date()
+    delta_days = (deadline - today).days
+    if delta_days <= _PRIORITY_HIGH_DAYS:
+        return "high"
+    if delta_days <= _PRIORITY_MEDIUM_DAYS:
+        return "medium"
+    return "low"
+
+
 def _coerce_deadline_time(value: object) -> time | None:
     """Round 13: normalize_tasks emits a ``datetime.time`` (or None) in the
     ``deadline_time`` field. Pass it through to the Task row unchanged when
@@ -185,7 +206,13 @@ async def async_save_tasks(state: PipelineState) -> dict:
                         best.deadline = _parse_deadline(vt.get("deadline"))
                         best.deadline_time = _coerce_deadline_time(vt.get("deadline_time"))
                         best.deadline_v2 = vt.get("deadline_v2") if isinstance(vt.get("deadline_v2"), dict) else None
-                        best.priority = vt.get("priority") if isinstance(vt.get("priority"), str) else None
+                        # Same priority rule as the new-task path: respect any
+                        # LLM-extracted urgency signal from the message, else
+                        # derive from the (possibly updated) deadline. Don't
+                        # leave a stale prior priority on a reused row whose
+                        # deadline just moved out by a week.
+                        _llm_pri = vt.get("priority") if isinstance(vt.get("priority"), str) else None
+                        best.priority = _llm_pri or _derive_priority_from_deadline(best.deadline)
                         best.uncertainty = vt.get("uncertainty") if isinstance(vt.get("uncertainty"), dict) else None
                         best.missing_fields = list(vt.get("missing_fields") or [])
                         # Refresh the evidence quote from this re-extraction: a
@@ -203,6 +230,19 @@ async def async_save_tasks(state: PipelineState) -> dict:
                         title_to_new_id[tkey] = best.id
                     else:
                         tid = uuid.uuid4()
+                        # LLM may emit a priority signal from the message itself
+                        # (e.g. "URGENT", "p0"). Preserve that — it carries
+                        # content-derived intent we can't reconstruct from the
+                        # date alone. Only fill in a deadline-derived priority
+                        # when the LLM didn't extract one AND the task has a
+                        # deadline (otherwise priority stays None for the user
+                        # to set manually on the /tasks page).
+                        llm_priority = vt.get("priority") if isinstance(vt.get("priority"), str) else None
+                        parsed_deadline = _parse_deadline(vt.get("deadline"))
+                        derived_priority = (
+                            llm_priority
+                            or _derive_priority_from_deadline(parsed_deadline)
+                        )
                         task = Task(
                             id=tid,
                             user_id=user_uuid,
@@ -212,10 +252,10 @@ async def async_save_tasks(state: PipelineState) -> dict:
                             description=vt.get("description") if isinstance(vt.get("description"), str) else None,
                             assignee=vt.get("assignee") if isinstance(vt.get("assignee"), str) else None,
                             assignee_canonical=vt.get("assignee_canonical") if isinstance(vt.get("assignee_canonical"), str) else None,
-                            deadline=_parse_deadline(vt.get("deadline")),
+                            deadline=parsed_deadline,
                             deadline_time=_coerce_deadline_time(vt.get("deadline_time")),
                             deadline_v2=vt.get("deadline_v2") if isinstance(vt.get("deadline_v2"), dict) else None,
-                            priority=vt.get("priority") if isinstance(vt.get("priority"), str) else None,
+                            priority=derived_priority,
                             uncertainty=vt.get("uncertainty") if isinstance(vt.get("uncertainty"), dict) else None,
                             missing_fields=list(vt.get("missing_fields") or []),
                             evidence_quote=vt.get("evidence_quote") if isinstance(vt.get("evidence_quote"), str) else None,

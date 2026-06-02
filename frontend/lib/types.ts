@@ -35,11 +35,18 @@ export interface Task {
   notification_sent: boolean;
   evidence_quote: string | null;
   confirmed_by: string | null;
+  // Phase 4 (no-deadline UX): Google-Tasks-like tracking state. Backend
+  // returns null for legacy rows; the Tracking UI treats null as "todo".
+  progress_state: ProgressState | null;
   source_doc_id: string | null;
   source_type: string | null;
   created_at: string;
   updated_at: string;
 }
+
+// Phase 4 (no-deadline UX) — tracking state, kept narrow with a string
+// literal so a typo in the UI fails at compile time.
+export type ProgressState = "todo" | "in_progress" | "done";
 
 export type ConflictScope =
   | "multi_source"

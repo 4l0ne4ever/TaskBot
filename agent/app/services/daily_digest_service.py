@@ -92,6 +92,12 @@ def build_digest_data(
     # confirmed-with-missing-fields), regardless of age. Collected here as a
     # superset of review_samples, sorted later by urgency before rendering.
     outstanding_all: list[dict[str, Any]] = []
+    # Phase 3 (no-deadline UX): a dedicated bucket for high/medium-priority
+    # tasks that are missing a deadline. The general "still outstanding"
+    # list buries them at the bottom (sorted by urgency, no-deadline = last)
+    # — but high-priority work without a deadline is the exact thing the
+    # Anna persona keeps losing track of. Surface it separately at the top.
+    needs_deadline_all: list[dict[str, Any]] = []
 
     for t in tasks:
         created = _coerce_dt(t.created_at)
@@ -112,6 +118,9 @@ def build_digest_data(
             t.status == "pending"
             or (t.status == "confirmed" and len(missing) > 0)
         )
+        # Phase 3 — read priority safely; test fakes (SimpleNamespace) may
+        # omit the attribute entirely.
+        prio = getattr(t, "priority", None)
         if needs_attention:
             outstanding_all.append({
                 "title": t.title or "(untitled)",
@@ -120,6 +129,23 @@ def build_digest_data(
                 "deadline": _coerce_date(t.deadline).isoformat() if _coerce_date(t.deadline) else None,
                 "missing": missing,
                 "created": (created.date().isoformat() if created else None),
+                "priority": prio,
+            })
+
+        # Phase 3 — separate "needs deadline" bucket. Only tasks the user
+        # cares about (high/medium priority, not dismissed) and with no
+        # deadline set. Pending and confirmed both qualify; the goal is to
+        # nudge the user into picking a date so the work hits the calendar.
+        if (
+            t.deadline is None
+            and prio in ("high", "medium")
+            and t.status != "dismissed"
+        ):
+            needs_deadline_all.append({
+                "title": t.title or "(untitled)",
+                "status": t.status,
+                "assignee": t.assignee,
+                "priority": prio,
             })
 
         if t.status == "pending":
@@ -158,6 +184,16 @@ def build_digest_data(
     outstanding_samples = outstanding_all[:_MAX_OUTSTANDING_TASKS_SHOWN]
     outstanding_total = len(outstanding_all)
 
+    # Phase 3 — sort needs-deadline by priority (high first), then title for
+    # determinism. Cap at the same outstanding cap so the section stays
+    # bounded even on big backlogs.
+    _PRIO_RANK = {"high": 0, "medium": 1}
+    needs_deadline_all.sort(
+        key=lambda x: (_PRIO_RANK.get(x.get("priority") or "", 99), x.get("title") or "")
+    )
+    needs_deadline_samples = needs_deadline_all[:_MAX_OUTSTANDING_TASKS_SHOWN]
+    needs_deadline_total = len(needs_deadline_all)
+
     conflicts_today = 0
     open_conflicts = 0
     for c in conflicts:
@@ -185,6 +221,11 @@ def build_digest_data(
         # (Anna wants to see what's *still* outstanding, not just today's).
         "outstanding_total": outstanding_total,
         "outstanding_samples": outstanding_samples,
+        # Phase 3 (no-deadline UX): high/medium-priority tasks missing
+        # a deadline. Rendered as its own section above the general
+        # outstanding list so the user picks dates before the work slips.
+        "needs_deadline_total": needs_deadline_total,
+        "needs_deadline_samples": needs_deadline_samples,
     }
 
 
@@ -264,12 +305,76 @@ def render_digest_html(data: dict[str, Any]) -> str:
     <tbody>{samples_rows}</tbody>
   </table>
 
+  {_render_needs_deadline_html(data)}
+
   {_render_outstanding_html(data)}
 
   <p style="margin:18px 0 0 0;font-size:12px;color:#9ca3af;">
     Sent from your own Gmail to yourself — TaskBot uses your ``gmail.send`` scope.
   </p>
 </body></html>"""
+
+
+def _render_needs_deadline_html(data: dict[str, Any]) -> str:
+    """Phase 3 (no-deadline UX) — high/medium-priority tasks without a deadline.
+
+    Rendered above the general outstanding list so the user is nudged to set
+    dates before the work slips. Empty bucket → empty string (no clean-slate
+    copy; the rest of the digest already conveys it).
+    """
+    total = int(data.get("needs_deadline_total") or 0)
+    samples = data.get("needs_deadline_samples") or []
+    if not samples:
+        return ""
+    rows = ""
+    for s in samples:
+        prio = s.get("priority") or ""
+        if prio == "high":
+            prio_bg, prio_fg = "#fee2e2", "#b91c1c"
+        elif prio == "medium":
+            prio_bg, prio_fg = "#fef3c7", "#b45309"
+        else:
+            prio_bg, prio_fg = "#e5e7eb", "#374151"
+        prio_chip = (
+            f'<span style="display:inline-block;padding:1px 6px;border-radius:8px;'
+            f'background:{prio_bg};color:{prio_fg};font-size:11px;font-weight:600;'
+            f'text-transform:uppercase;letter-spacing:.04em;margin-left:6px;">'
+            f"{_e(prio)}</span>"
+        )
+        status_chip = (
+            f'<span style="display:inline-block;padding:1px 6px;border-radius:8px;'
+            f'background:#e0f2fe;color:#0369a1;font-size:11px;margin-left:6px;">'
+            f'{_e(s.get("status") or "")}</span>'
+        )
+        rows += (
+            "<tr>"
+            f'<td style="padding:6px 10px;border-bottom:1px solid #eee;">'
+            f'{_e(s.get("title") or "")}{prio_chip}{status_chip}</td>'
+            f'<td style="padding:6px 10px;border-bottom:1px solid #eee;color:#6b7280;">'
+            f'{_e(s.get("assignee") or "—")}</td>'
+            "</tr>"
+        )
+    more_footer = ""
+    if total > len(samples):
+        more_footer = (
+            f'<p style="margin:6px 0 0 0;font-size:12px;color:#6b7280;font-style:italic;">'
+            f"+ {total - len(samples)} more not shown — open TaskBot to set deadlines.</p>"
+        )
+    return (
+        f'<h3 style="margin:22px 0 6px 0;font-size:14px;color:#b91c1c;">'
+        f"Needs a deadline ({total})</h3>"
+        f'<p style="margin:0 0 6px 0;font-size:12px;color:#6b7280;">'
+        f"High/medium-priority work without a deadline doesn't land on the calendar. "
+        f"Pick a date so the team knows when each item is due."
+        f"</p>"
+        f'<table style="border-collapse:collapse;width:100%;font-size:13px;">'
+        f'<thead><tr style="text-align:left;color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">'
+        f'<th style="padding:6px 10px;border-bottom:1px solid #d1d5db;">Title</th>'
+        f'<th style="padding:6px 10px;border-bottom:1px solid #d1d5db;">Assignee</th>'
+        f"</tr></thead>"
+        f"<tbody>{rows}</tbody></table>"
+        f"{more_footer}"
+    )
 
 
 def _render_outstanding_html(data: dict[str, Any]) -> str:
@@ -375,6 +480,21 @@ def render_digest_text(data: dict[str, Any]) -> str:
             lines.append(
                 f"  - {s['title']} · {s['assignee'] or '—'} · {s['deadline'] or '—'}{miss}"
             )
+    # Phase 3 (no-deadline UX): high/medium-priority tasks without a deadline.
+    nd_total = int(data.get("needs_deadline_total") or 0)
+    nd_samples = data.get("needs_deadline_samples") or []
+    if nd_samples:
+        lines += ["", f"Needs a deadline ({nd_total}):"]
+        for s in nd_samples:
+            prio = s.get("priority") or ""
+            lines.append(
+                f"  - [{prio.upper()}] {s.get('title') or ''} · {s.get('assignee') or '—'}"
+            )
+        if nd_total > len(nd_samples):
+            lines.append(
+                f"  (+ {nd_total - len(nd_samples)} more — open TaskBot to set deadlines)"
+            )
+
     # Round 12: still-outstanding section (age-agnostic backlog).
     outstanding_total = data.get("outstanding_total", 0)
     outstanding_samples = data.get("outstanding_samples", [])

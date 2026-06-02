@@ -7,6 +7,7 @@ import toast from "react-hot-toast";
 import { api } from "@/lib/api";
 import { HighlightExcerpt } from "@/components/ui/HighlightExcerpt";
 import type { Task, TaskSource } from "@/lib/types";
+import { emitTasksChanged } from "@/lib/usePendingReviewCount";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -79,6 +80,18 @@ export default function TaskDetailPage() {
     }
   }
 
+  async function savePriority(next: string | null) {
+    if (!task) return;
+    setTask({ ...task, priority: next });
+    try {
+      await api.tasks.update(task.id, { priority: next });
+      toast.success(next ? `Priority: ${next}` : "Priority cleared");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
+      void load();
+    }
+  }
+
   async function toggleSource() {
     if (sourceOpen) { setSourceOpen(false); return; }
     setSourceOpen(true);
@@ -98,6 +111,9 @@ export default function TaskDetailPage() {
     try {
       await api.tasks.delete(task.id);
       toast.success("Deleted");
+      // Delete may have removed a pending task — refresh the sidebar badge
+      // before navigating away so the count drops immediately on return.
+      if (task.status === "pending") emitTasksChanged();
       router.push("/tasks");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Delete failed");
@@ -141,7 +157,18 @@ export default function TaskDetailPage() {
 
         <dl className="grid grid-cols-2 gap-4">
           <Field label="Assignee">{task.assignee ?? "\u2014"}</Field>
-          <Field label="Priority">{task.priority ?? "\u2014"}</Field>
+          <Field label="Priority">
+            <select
+              value={task.priority ?? ""}
+              onChange={(e) => void savePriority(e.target.value || null)}
+              className="bg-[var(--input-bg)] border border-[var(--border)] rounded-md px-2 py-1 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] [color-scheme:dark]"
+            >
+              <option value="">None</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </Field>
           <Field label="Status">{task.status}</Field>
           <Field label="Source">{task.source_type ?? "\u2014"}</Field>
         </dl>
@@ -174,7 +201,7 @@ export default function TaskDetailPage() {
               onClick={() => void saveDeadline()}
               className="rounded-lg bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white px-4 py-2 text-sm font-medium transition-colors"
             >
-              Save
+              Save deadline
             </button>
           </div>
         </div>

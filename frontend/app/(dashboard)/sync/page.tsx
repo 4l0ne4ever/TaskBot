@@ -14,7 +14,7 @@ import type { LastResult } from "@/components/sync/types";
 import type { PipelineRunRow, SyncStateRow } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const RUNS_PAGE_SIZE = 20;
+const RUNS_PAGE_SIZE = 10;
 
 export default function SyncPage() {
   const [status, setStatus] = useState<SyncStateRow[]>([]);

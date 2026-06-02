@@ -51,24 +51,49 @@ async def async_load_existing_tasks_for_validate(state: PipelineState) -> list[d
         if not group_id and meta_group:
             group_id = meta_group
 
+        # Always load recent same-user tasks across threads. Previously this
+        # branch only fired when group_id was empty, which meant Gmail (every
+        # message in a unique thread) NEVER saw cross-thread tasks as conflict
+        # candidates — inter_doc deadline_conflict silently no-op'd for the
+        # most common real-world scenario (same deliverable mentioned in two
+        # separate emails). validate_tasks filters this pool by title
+        # similarity (≥ conflict_title_similarity_threshold) before any LLM
+        # call, so loading a wider pool only costs one extra DB query, not
+        # extra LLM spend.
+        recent_stmt = (
+            select(Task)
+            .where(
+                Task.user_id == user_uuid,
+                Task.source_doc_id != source_doc_uuid,
+            )
+            .order_by(Task.updated_at.desc())
+            .limit(100)
+        )
+        rows: list[Task] = list((await session.execute(recent_stmt)).scalars().all())
+
+        # When the current source_doc has a thread, also pull every same-thread
+        # task even if it's outside the recent-100 window — thread_update
+        # detection (Phase 2.1 + A') depends on having ALL prior thread tasks
+        # visible regardless of recency, so a slow-burn thread that hasn't
+        # been touched in weeks still surfaces its prior revisions.
         if group_id:
-            stmt = (
+            same_thread_stmt = (
                 select(Task)
                 .join(SourceDocument, Task.source_doc_id == SourceDocument.id)
                 .where(
                     Task.user_id == user_uuid,
                     SourceDocument.dedupe_group_id == group_id,
+                    Task.source_doc_id != source_doc_uuid,
                 )
             )
-            rows = list((await session.execute(stmt)).scalars().all())
-        else:
-            stmt = (
-                select(Task)
-                .where(Task.user_id == user_uuid)
-                .order_by(Task.updated_at.desc())
-                .limit(100)
+            same_thread_rows = list(
+                (await session.execute(same_thread_stmt)).scalars().all()
             )
-            rows = list((await session.execute(stmt)).scalars().all())
+            seen_ids = {t.id for t in rows}
+            for t in same_thread_rows:
+                if t.id not in seen_ids:
+                    rows.append(t)
+                    seen_ids.add(t.id)
 
     return [_task_row_to_dict(t) for t in rows]
 

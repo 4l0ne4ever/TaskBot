@@ -8,8 +8,9 @@ import { SCOPE_OPTIONS } from "@/components/conflicts/ScopeBadge";
 import { ConflictCard } from "@/components/conflicts/ConflictCard";
 import { ScopeChip } from "@/components/conflicts/ScopeChip";
 import type { Conflict, ConflictScope, MergeableField, Task } from "@/lib/types";
+import { emitTasksChanged } from "@/lib/usePendingReviewCount";
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 5;
 
 type ScopeFilter = ConflictScope | "all";
 
@@ -66,6 +67,11 @@ export default function ConflictsPage() {
     try {
       await api.conflicts.resolve(id, resolution);
       toast.success("Resolved");
+      // Resolving a conflict typically flips one underlying task's status
+      // (accept_a / accept_b confirm the chosen side; dismiss leaves both
+      // pending). Either way the pending-review count can change, so nudge
+      // the sidebar badge instead of waiting for tab refocus.
+      emitTasksChanged();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
       void load(page); // restore on error
@@ -77,6 +83,7 @@ export default function ConflictsPage() {
     try {
       const res = await api.conflicts.merge(id, fields);
       toast.success(`Merged. ${res.calendar_sync.message}`);
+      emitTasksChanged();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Merge failed");
       void load(page); // restore on error
@@ -91,6 +98,7 @@ export default function ConflictsPage() {
       toast.success(`Dismissed ${res.dismissed} conflict(s)`);
       setPage(1);
       void load(1);
+      emitTasksChanged();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
     } finally {
