@@ -133,13 +133,17 @@ def build_digest_data(
             })
 
         # Phase 3 — separate "needs deadline" bucket. Only tasks the user
-        # cares about (high/medium priority, not dismissed) and with no
-        # deadline set. Pending and confirmed both qualify; the goal is to
-        # nudge the user into picking a date so the work hits the calendar.
+        # cares about (high/medium priority, not dismissed, not done) and
+        # with no deadline set. Pending and confirmed both qualify; the
+        # goal is to nudge the user into picking a date so the work hits
+        # the calendar. Excluding ``progress_state='done'`` keeps the
+        # email aligned with the /tasks default-archive rule (Phase 4):
+        # don't nag about work the user already marked complete.
         if (
             t.deadline is None
             and prio in ("high", "medium")
             and t.status != "dismissed"
+            and getattr(t, "progress_state", None) != "done"
         ):
             needs_deadline_all.append({
                 "title": t.title or "(untitled)",

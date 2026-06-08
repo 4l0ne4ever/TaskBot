@@ -39,6 +39,17 @@ class Task(Base):
     # core features. Values: "todo" | "in_progress" | "done". NULL means
     # legacy row → treated as "todo" by the UI.
     progress_state: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Phase 6.6 (recurring events, 2026-06-03): LLM-suggest / user-confirm.
+    # ``recurrence_rule``  = active RFC 5545 RRULE driving the Google Calendar
+    #                        recurring event. NULL = one-shot task.
+    # ``recurrence_suggested`` = RRULE detected by extraction, awaiting user
+    #                            confirm. Cleared on apply (moved to _rule) or
+    #                            on dismiss.
+    # ``recurrence_dismissed_at`` = dismiss timestamp; suppresses re-suggestion
+    #                               when the same task is re-synced.
+    recurrence_rule: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recurrence_suggested: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recurrence_dismissed_at: Mapped[date | None] = mapped_column(DateTime(timezone=True), nullable=True)
     previous_revision: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

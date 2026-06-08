@@ -1,13 +1,11 @@
 "use client";
 
-// Phase 4 (no-deadline UX, 2026-06-02) — Google-Tasks-like Kanban for
-// tasks without a deadline. Three buckets: Todo / In Progress / Done.
-// Backed by ``tasks.progress_state`` (migration 0014). NULL is treated as
-// "todo" so legacy rows land in the first column.
-//
-// Scope choice: this page only shows non-dismissed, no-deadline tasks.
-// Tasks with a deadline live on /calendar; date-anchored work has a
-// natural calendar surface and doesn't need progress tracking here.
+// Kanban for every non-dismissed task split by ``progress_state``
+// (migration 0014). NULL state → "todo" column so legacy rows land in the
+// first bucket. Both deadlined and no-deadline tasks appear here —
+// /calendar gives the date-anchored view, /tracking gives the workflow
+// view, /tasks gives the master list. Dismissed tasks are filtered out
+// (already triaged).
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -45,11 +43,12 @@ export default function TrackingPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Pull a generous slice (200) — the no-deadline bucket is the
-      // backlog Anna keeps losing; capping here would hide it again.
-      // Backend filter ``missing=deadline`` already excludes deadlined
-      // rows so we get exactly the right population.
-      const { tasks: rows } = await api.tasks.list({ missing: "deadline", limit: 200 });
+      // Pull a generous slice — Kanban needs every active task in one
+      // view; we'd lose the "what am I working on" overview if we paged.
+      // ``scope: "all"`` keeps the Done column populated alongside Todo
+      // + In Progress (the default ``active`` scope hides done +
+      // confirmed-past-deadline, which would empty the Done column).
+      const { tasks: rows } = await api.tasks.list({ limit: 200, scope: "all" });
       // Dismissed tasks were already triaged — they don't belong on a
       // tracking board. Client-side filter keeps the request simple.
       setTasks(rows.filter((t) => t.status !== "dismissed"));
@@ -110,9 +109,9 @@ export default function TrackingPage() {
       <header className="space-y-1">
         <h1 className="text-xl font-semibold tracking-tight">Tracking</h1>
         <p className="text-sm text-[var(--muted)]">
-          Tasks without a deadline — track progress like a kanban board. Add a deadline from{" "}
-          <Link href="/calendar" className="text-[var(--accent)] hover:underline">/calendar</Link>{" "}
-          to graduate a task off this board.
+          Kanban view across every active task. Move cards between Todo / In Progress / Done.
+          For the date-anchored view see{" "}
+          <Link href="/calendar" className="text-[var(--accent)] hover:underline">/calendar</Link>.
         </p>
       </header>
 
@@ -126,7 +125,9 @@ export default function TrackingPage() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
           <p className="text-sm text-[var(--muted)]">
-            Nothing to track — every task currently has a deadline.
+            No tasks. Sync from Gmail/Drive or check{" "}
+            <Link href="/tasks" className="text-[var(--accent)] hover:underline">/tasks</Link>{" "}
+            to see history.
           </p>
         </div>
       ) : (
@@ -196,6 +197,16 @@ function TaskCard({
       </div>
       {task.assignee && (
         <p className="text-xs text-[var(--muted)]">{task.assignee}</p>
+      )}
+      {task.deadline && (
+        <p className="text-xs text-[var(--muted)] tabular-nums">
+          {task.deadline}
+          {task.deadline_time && (
+            <span className="ml-1 text-[var(--foreground)]">
+              {task.deadline_time.slice(0, 5)}
+            </span>
+          )}
+        </p>
       )}
       <div className="flex gap-1 pt-1 opacity-60 group-hover:opacity-100 transition-opacity">
         {COLUMNS.filter((c) => c.state !== here).map((c) => (

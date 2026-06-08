@@ -684,6 +684,11 @@ def test_multi_source_detector_emits_conflict_on_gmail_drive_match() -> None:
     assert c["conflict_type"] == "multi_source"
     assert c["source_b_ref"] == "11111111-1111-1111-1111-111111111111"
     assert "drive" in c["description"] and "gmail" in c["description"]
+    # Bug 2026-06-08: multi_source emit must carry the existing task UUID in
+    # task_id_b so save_tasks_service can populate conflicts.task_ids[2] with
+    # a real task id (not a source_doc id, which produced phantom UI cards
+    # showing "Source content not available for this reference").
+    assert c["task_id_b"] == "00000000-0000-0000-0000-000000000aaa"
 
 
 def test_multi_source_skipped_when_same_source_type() -> None:
@@ -855,6 +860,102 @@ def test_entity_overlap_compatible_helper() -> None:
     assert _entity_overlap_compatible({"Hương"}, {"Hương", "Minh"}) is True
     # Both non-empty, disjoint → False
     assert _entity_overlap_compatible({"Hương"}, {"Minh"}) is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cross-detector dedup (2026-06-08 forensic)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_dedup_collapses_same_pair_multi_source_and_thread_update_to_one() -> None:
+    """The 2026-06-08 bug: an upload vs an existing gmail task fired both
+    multi_source (different source types) and thread_update (different
+    deadlines), giving the user two cards for one conflict. The dedup pass
+    must keep the more specific scope (thread_update) and drop multi_source."""
+    from app.pipeline.nodes.validate_tasks import _dedup_conflicts_by_pair
+
+    existing_task_uuid = "ee4b01d3-d27f-46c5-8abc-82be1f70a9c0"
+    conflicts = [
+        {
+            "scope": "multi_source",
+            "conflict_type": "multi_source",
+            "task_title": "write release notes v3.0",
+            "source_a_ref": "batch-0",
+            "source_b_ref": "740552ca-cd41-4490-b999-827cf6c2659e",  # source_doc
+            "task_id_b": existing_task_uuid,
+        },
+        {
+            "scope": "thread_update",
+            "conflict_type": "deadline_conflict",
+            "task_title": "write release notes v3.0",
+            "source_a_ref": "upload-0",
+            "source_b_ref": existing_task_uuid,
+        },
+    ]
+    out = _dedup_conflicts_by_pair(conflicts)
+    assert len(out) == 1
+    assert out[0]["scope"] == "thread_update"
+
+
+def test_dedup_keeps_distinct_pairs_intact() -> None:
+    """Two conflicts pointing at *different* existing tasks must both survive
+    — dedup is per pair, not blanket."""
+    from app.pipeline.nodes.validate_tasks import _dedup_conflicts_by_pair
+
+    conflicts = [
+        {
+            "scope": "multi_source",
+            "task_title": "ship release notes",
+            "task_id_b": "11111111-1111-1111-1111-111111111111",
+            "source_b_ref": "doc-a",
+        },
+        {
+            "scope": "multi_source",
+            "task_title": "ship release notes",
+            "task_id_b": "22222222-2222-2222-2222-222222222222",
+            "source_b_ref": "doc-b",
+        },
+    ]
+    out = _dedup_conflicts_by_pair(conflicts)
+    assert len(out) == 2
+
+
+def test_dedup_specificity_order() -> None:
+    """thread_update > inter_doc > intra_batch > multi_source — verify by
+    seeding pairs in every combination and checking the winner."""
+    from app.pipeline.nodes.validate_tasks import _dedup_conflicts_by_pair
+
+    cases = [
+        (["multi_source", "intra_batch"], "intra_batch"),
+        (["multi_source", "inter_doc"], "inter_doc"),
+        (["multi_source", "thread_update"], "thread_update"),
+        (["intra_batch", "inter_doc"], "inter_doc"),
+        (["inter_doc", "thread_update"], "thread_update"),
+        (["intra_batch", "thread_update"], "thread_update"),
+    ]
+    same_title = "t"
+    same_existing = "ee4b01d3-d27f-46c5-8abc-82be1f70a9c0"
+    for scopes, winner in cases:
+        conflicts = [
+            {"scope": s, "task_title": same_title, "source_b_ref": same_existing}
+            for s in scopes
+        ]
+        out = _dedup_conflicts_by_pair(conflicts)
+        assert len(out) == 1, f"failed for scopes={scopes}"
+        assert out[0]["scope"] == winner, f"scopes={scopes}: expected {winner}, got {out[0]['scope']}"
+
+
+def test_dedup_passes_through_conflicts_without_derivable_pair() -> None:
+    """Conflicts missing task_title or B-side cannot be deduped safely; they
+    must pass through unchanged (no silent loss)."""
+    from app.pipeline.nodes.validate_tasks import _dedup_conflicts_by_pair
+
+    conflicts = [
+        {"scope": "multi_source", "task_title": "", "source_b_ref": "ee4b01d3-d27f-46c5-8abc-82be1f70a9c0"},
+        {"scope": "thread_update", "task_title": "x", "source_b_ref": None, "task_id_b": None},
+    ]
+    out = _dedup_conflicts_by_pair(conflicts)
+    assert len(out) == 2
 
 
 # ─────────────────────────────────────────────────────────────────────────────

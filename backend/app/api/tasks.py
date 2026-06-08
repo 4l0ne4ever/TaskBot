@@ -123,6 +123,7 @@ def _apply_task_list_filters(
     deadline_to: date | None,
     missing: str | None = None,
     priority: str | None = None,
+    scope: str = "active",
 ):
     if status:
         stmt = stmt.where(Task.status == status)
@@ -158,6 +159,48 @@ def _apply_task_list_filters(
             | (Task.assignee.is_(None))
             | (func.length(func.trim(Task.assignee)) == 0)
         )
+    # 2026-06-07 (v2): completed-bucket filter via ``scope`` enum. The /tasks
+    # UI toggle maps to two of the three values; /tracking uses the third.
+    #
+    #   scope="active"    → NOT done AND NOT past-due-confirmed (default)
+    #   scope="completed" → done OR past-due-confirmed (the Show-completed view)
+    #   scope="all"       → no filter (every non-archived row; used by
+    #                       /tracking so the Kanban Done column stays
+    #                       populated alongside Todo + In Progress)
+    #
+    # Two flavours of "completed":
+    #   1. ``progress_state = 'done'`` — Kanban-tracked completion
+    #   2. ``status = 'confirmed' AND deadline < today`` — date-anchored
+    #      work whose deadline has passed (presumed delivered)
+    # Overdue *pending* tasks stay in the active view — they still need
+    # attention, the user hasn't acknowledged them yet.
+    today = date.today()
+    is_done = Task.progress_state == "done"
+    is_past_due_confirmed = (
+        (Task.status == "confirmed")
+        & Task.deadline.is_not(None)
+        & (Task.deadline < today)
+    )
+    if scope == "completed":
+        # NULL ``progress_state`` rows are not done (definitionally —
+        # Kanban never moved them), so ``=`` is correct here: NULL = 'done'
+        # → NULL → row excluded, which matches the completed-view intent.
+        stmt = stmt.where(is_done | is_past_due_confirmed)
+    elif scope == "all":
+        # No completed-bucket filter — every row from the user's task table
+        # passes (other filters above still apply: status, missing, etc.).
+        pass
+    else:  # "active" (default)
+        # NULL safety: ``progress_state`` defaults to NULL for legacy rows
+        # and ``deadline`` is NULL for no-deadline tasks. A naïve
+        # ``(progress_state='done') OR (status='confirmed' AND deadline<today)``
+        # evaluates to NULL when both sides are NULL → ``NOT NULL`` is NULL
+        # → the WHERE clause drops the row. Use ``IS DISTINCT FROM`` for the
+        # done check (treats NULL as "not done") and the IS NOT NULL guard on
+        # deadline so a no-deadline task survives the past-due comparison.
+        not_done = Task.progress_state.is_distinct_from("done")
+        not_past_due = ~is_past_due_confirmed
+        stmt = stmt.where(not_done & not_past_due)
     if source:
         stmt = stmt.join(SourceDocument, Task.source_doc_id == SourceDocument.id).where(
             SourceDocument.source_type == source
@@ -194,6 +237,7 @@ async def list_tasks(
     sort: str = Query("created_desc", pattern=r"^(deadline_asc|created_desc)$"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    scope: str = Query("active", pattern=r"^(active|completed|all)$"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[TaskResponse]:
@@ -204,6 +248,7 @@ async def list_tasks(
         "deadline_to": deadline_to,
         "missing": missing,
         "priority": priority,
+        "scope": scope,
     }
     total = await _count_filtered_tasks(db, current_user.id, **filters)
     response.headers["X-Total-Count"] = str(total)
@@ -368,9 +413,50 @@ async def update_task(
         raise HTTPException(status_code=404, detail={"code": "TASK_NOT_FOUND", "message": "Task not found"})
 
     changes = body.model_dump(exclude_unset=True)
+    # Phase 6.6 (2026-06-03): dismiss flag is a server-side control, not a
+    # Task column — pop it out before the generic setattr loop. Setting it
+    # to True records "now" so re-syncs of the same task suppress further
+    # recurrence suggestions (recurrence_dismissed_at IS NOT NULL guard in
+    # save_tasks_service).
+    dismiss_suggestion = changes.pop("dismiss_recurrence_suggestion", None)
+    # Capture prior recurrence_rule for the remove-recurrence flow below.
+    prior_recurrence_rule = task.recurrence_rule
+    # Empty-string sentinel from the validator means "clear" — translate to
+    # None for the ORM. A non-None canonicalised RRULE is the new active
+    # rule; clear any pending suggestion since the user is applying it.
+    if "recurrence_rule" in changes:
+        new_rrule = changes["recurrence_rule"]
+        changes["recurrence_rule"] = new_rrule if new_rrule else None
+        if changes["recurrence_rule"] is not None:
+            task.recurrence_suggested = None
     for field, value in changes.items():
         setattr(task, field, value)
-    if changes:
+    if dismiss_suggestion is True:
+        task.recurrence_dismissed_at = datetime.now(timezone.utc)
+        task.recurrence_suggested = None
+    # Phase 6.6 remove-recurrence flow: when the user clears an active
+    # recurrence_rule, the FIRST upcoming occurrence becomes the new deadline
+    # of a now-single task (preserves task existence — "remove recurrence"
+    # ≠ "delete task"). The old Google Calendar recurring event becomes an
+    # orphan in v1 — documented as a known limitation in
+    # tests/e2e/real-world-validation.md §9; cleanup via a sweeper or an
+    # explicit delete-event call is v2 work.
+    removed_recurrence = (
+        "recurrence_rule" in changes
+        and changes["recurrence_rule"] is None
+        and prior_recurrence_rule is not None
+    )
+    if removed_recurrence and task.deadline is not None:
+        from app.utils.recurrence import next_occurrence
+
+        nxt = next_occurrence(prior_recurrence_rule, task.deadline)
+        if nxt is not None:
+            task.deadline = nxt
+        # Force recreation as a single event on the next dispatch — without
+        # this the dispatch would PATCH the existing recurring event and
+        # Google would keep the RRULE.
+        task.calendar_event_id = None
+    if changes or dismiss_suggestion is True:
         task.updated_at = datetime.now(timezone.utc)
 
     # confirmed_by is controlled server-side — the client only sends status.
@@ -398,7 +484,15 @@ async def update_task(
 
     # When confirming a task that has a deadline, enqueue a calendar event
     # creation/update job so the event appears without requiring a full sync.
-    need_calendar = changes.get("status") == "confirmed" and task.deadline is not None
+    # Phase 6.6: also enqueue when recurrence_rule changed on an already-
+    # confirmed task — dispatch propagates the new RRULE (or clears it as a
+    # single event when the remove-recurrence flow ran above).
+    recurrence_changed = (
+        "recurrence_rule" in changes and task.status == "confirmed" and task.deadline is not None
+    )
+    need_calendar = (
+        changes.get("status") == "confirmed" and task.deadline is not None
+    ) or recurrence_changed
     access_token: str | None = None
     if need_calendar:
         from app.api.conflicts import _build_calendar_resync_payload

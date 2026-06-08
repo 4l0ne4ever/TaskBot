@@ -1,5 +1,6 @@
 import re
 import unicodedata
+import uuid
 
 from app.pipeline.calibration import Calibrator, get_runtime_calibrator
 from app.pipeline.nodes.conflict_detectors import (
@@ -23,6 +24,72 @@ _has_thread_update_marker = has_thread_update_marker
 _detect_multi_source_conflicts = detect_multi_source_conflicts
 _detect_intra_batch_conflicts = detect_intra_batch_conflicts
 _entity_overlap_compatible = entity_overlap_compatible
+
+# Scope specificity for cross-detector dedup. Higher number wins when two
+# scopes fire on the same (new task, existing task) pair. ``multi_source``
+# is the most generic ("same deliverable across platforms") and loses to
+# any scope that encodes an actionable specific (deadline conflict,
+# reassignment, merge action). Mirror this order if you add a new scope.
+_SCOPE_SPECIFICITY: dict[str, int] = {
+    "thread_update": 3,
+    "inter_doc": 2,
+    "intra_batch": 1,
+    "multi_source": 0,
+}
+
+
+def _pair_signature(c: dict) -> tuple[str, str] | None:
+    """Identify the (new task, existing task) pair a conflict refers to.
+
+    Returns ``None`` when the pair cannot be derived (then the conflict is
+    treated as un-dedupable and left alone). Uses ``task_title`` to identify
+    the A side (the new task; same title across detectors for the same
+    emitter) and the existing task uuid for the B side. The B side is read
+    from ``task_id_b`` (multi_source detector) first, then ``source_b_ref``
+    parsed as UUID (thread_update / inter_doc detectors put the existing
+    task's uuid there).
+    """
+    title = (c.get("task_title") or "").strip().lower()
+    if not title:
+        return None
+    tid_b_raw = c.get("task_id_b")
+    if not tid_b_raw:
+        tid_b_raw = c.get("source_b_ref")
+    if not tid_b_raw:
+        return None
+    try:
+        tid_b = str(uuid.UUID(str(tid_b_raw)))
+    except (ValueError, TypeError):
+        # source_b_ref might be a free-form ref (e.g. ``batch-0`` from
+        # intra_batch detector). Use the string as-is — still unique enough
+        # to dedup within a single validate_tasks invocation.
+        tid_b = str(tid_b_raw)
+    return (title, tid_b)
+
+
+def _dedup_conflicts_by_pair(conflicts: list[dict]) -> list[dict]:
+    """Collapse conflicts that target the same task pair, keeping the most
+    specific scope. Conflicts without a derivable pair signature pass through
+    unchanged."""
+    if not conflicts:
+        return conflicts
+    seen: dict[tuple[str, str], int] = {}
+    keep: list[dict] = []
+    for c in conflicts:
+        sig = _pair_signature(c)
+        if sig is None:
+            keep.append(c)
+            continue
+        spec_new = _SCOPE_SPECIFICITY.get(c.get("scope") or "", 0)
+        if sig in seen:
+            existing_idx = seen[sig]
+            spec_old = _SCOPE_SPECIFICITY.get(keep[existing_idx].get("scope") or "", 0)
+            if spec_new > spec_old:
+                keep[existing_idx] = c
+            continue
+        seen[sig] = len(keep)
+        keep.append(c)
+    return keep
 
 
 def _to_confidence(value: object) -> float | None:
@@ -236,6 +303,18 @@ def validate_tasks(state: PipelineState) -> dict:
             conflicts.extend(ms_conflicts)
     except Exception as exc:
         errors.append(f"validate_tasks multi-source conflict check failed: {exc}")
+
+    # ── Cross-detector dedup ────────────────────────────────────────────────
+    # The three passes above run independently; nothing stops two of them
+    # from raising on the *same* (new task, existing task) pair. The 2026-06-08
+    # forensic showed an upload vs an existing gmail task firing both
+    # multi_source (different source types) and thread_update (different
+    # deadlines), producing two cards for one underlying conflict. Collapse
+    # them: keep the more specific scope (thread_update > inter_doc >
+    # intra_batch > multi_source) — multi_source is the most generic
+    # "same deliverable across sources" label, the others encode actionable
+    # specifics (deadline diff, reassignment, merge button).
+    conflicts = _dedup_conflicts_by_pair(conflicts)
 
     from app.pipeline.llm import summarize_provenance
 

@@ -77,6 +77,8 @@ async function apiFetchForm<T>(path: string, form: FormData): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export type TaskScope = "active" | "completed" | "all";
+
 function tasksQuery(params: {
   status?: string;
   source?: string;
@@ -85,6 +87,7 @@ function tasksQuery(params: {
   sort?: string;
   limit?: number;
   offset?: number;
+  scope?: TaskScope;
 }) {
   const q = new URLSearchParams();
   if (params.status) q.set("status", params.status);
@@ -94,6 +97,7 @@ function tasksQuery(params: {
   if (params.sort) q.set("sort", params.sort);
   if (params.limit != null) q.set("limit", String(params.limit));
   if (params.offset != null) q.set("offset", String(params.offset));
+  if (params.scope && params.scope !== "active") q.set("scope", params.scope);
   const s = q.toString();
   return s ? `?${s}` : "";
 }
@@ -136,7 +140,7 @@ export const api = {
     logout: () => apiFetch<{ message: string }>("/auth/logout", { method: "POST" }),
   },
   tasks: {
-    list: async (params?: { status?: string; source?: string; missing?: string; priority?: string; sort?: string; limit?: number; offset?: number }) => {
+    list: async (params?: { status?: string; source?: string; missing?: string; priority?: string; sort?: string; limit?: number; offset?: number; scope?: TaskScope }) => {
       const { data, total } = await apiFetchList<Task[]>(`/tasks${tasksQuery(params ?? {})}`);
       return { tasks: data, total };
     },
@@ -146,9 +150,24 @@ export const api = {
       data: Partial<
         Pick<
           Task,
-          "title" | "description" | "assignee" | "deadline" | "deadline_time" | "deadline_v2" | "priority" | "uncertainty" | "status" | "progress_state"
+          | "title"
+          | "description"
+          | "assignee"
+          | "deadline"
+          | "deadline_time"
+          | "deadline_v2"
+          | "priority"
+          | "uncertainty"
+          | "status"
+          | "progress_state"
+          | "recurrence_rule"
         >
-      >,
+      > & {
+        // Phase 6.6: server-side control flag — when true, the backend
+        // stamps recurrence_dismissed_at = now and clears recurrence_suggested.
+        // Not a Task column, so it's not in the Task type.
+        dismiss_recurrence_suggestion?: boolean;
+      },
     ) =>
       apiFetch<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     delete: (id: string) => apiFetch<{ deleted: string; calendar_event_id: string }>(`/tasks/${id}`, { method: "DELETE" }),

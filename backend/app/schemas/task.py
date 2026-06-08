@@ -1,7 +1,9 @@
 from datetime import date, datetime, time
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.utils.recurrence import RecurrenceError, validate_rrule
 
 
 class TaskUncertainty(BaseModel):
@@ -46,6 +48,12 @@ class TaskResponse(BaseModel):
     # Phase 4 (no-deadline UX): Google-Tasks-like tracking state. Null in the
     # API response means "todo" — the frontend defaults it for legacy rows.
     progress_state: str | None = None
+    # Phase 6.6 (recurring events): see backend/app/utils/recurrence.py for
+    # the whitelist contract. recurrence_rule = active; recurrence_suggested
+    # = LLM-detected awaiting confirm; recurrence_dismissed_at = suppress flag.
+    recurrence_rule: str | None = None
+    recurrence_suggested: str | None = None
+    recurrence_dismissed_at: datetime | None = None
     source_doc_id: UUID | None
     source_type: str | None = None
     created_at: datetime
@@ -98,3 +106,21 @@ class TaskUpdate(BaseModel):
     status: str | None = Field(None, pattern=r"^(pending|confirmed|dismissed)$")
     # Phase 4 — pattern-matched so a typo can't silently land in the column.
     progress_state: str | None = Field(None, pattern=r"^(todo|in_progress|done)$")
+    # Phase 6.6 — recurring events. Empty string sentinel means "clear" (used
+    # by the Remove recurrence flow on the frontend). Any non-empty value goes
+    # through the whitelist validator and is canonicalized in place.
+    recurrence_rule: str | None = None
+    # Dismiss the suggested recurrence (UI sends ``true`` to set the timestamp
+    # to now; backend ignores ``false``). Not a raw timestamp field because
+    # we don't want clients to backdate it.
+    dismiss_recurrence_suggestion: bool | None = None
+
+    @field_validator("recurrence_rule")
+    @classmethod
+    def _validate_rrule(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return v
+        try:
+            return validate_rrule(v)
+        except RecurrenceError as exc:
+            raise ValueError(str(exc)) from exc

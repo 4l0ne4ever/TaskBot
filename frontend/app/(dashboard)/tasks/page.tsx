@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { api } from "@/lib/api";
 import { Pagination } from "@/components/ui/Pagination";
+import { RecurrenceBadge } from "@/components/tasks/RecurrenceBadge";
 import type { Conflict, Task } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { emitTasksChanged } from "@/lib/usePendingReviewCount";
@@ -99,6 +100,28 @@ export default function TasksPage() {
   const [priority, setPriority] = useState<string>("");
   const [sort, setSort] = useState<string>("created_desc");
   const [page, setPage] = useState(1);
+  // 2026-06-07 (v2): "Show completed" toggle. Binary inverse — OFF shows
+  // the active list (default), ON shows ONLY done + past-due-confirmed
+  // (the completed bucket, no active mixed in). Persisted across reloads.
+  const [showCompleted, setShowCompleted] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const v = window.localStorage.getItem("taskbot:showCompleted");
+      if (v === "true") setShowCompleted(true);
+    } catch {
+      // localStorage may throw on private/quota-exceeded — silently fall
+      // back to defaults rather than breaking the page.
+    }
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("taskbot:showCompleted", String(showCompleted));
+    } catch {
+      // see hydration effect
+    }
+  }, [showCompleted]);
 
   const conflictTaskIds = useMemo(() => {
     const s = new Set<string>();
@@ -114,7 +137,16 @@ export default function TasksPage() {
     try {
       const offset = (p - 1) * PAGE_SIZE;
       const [taskResult, c] = await Promise.all([
-        api.tasks.list({ status: status || undefined, source: source || undefined, missing: missing || undefined, priority: priority || undefined, sort, limit: PAGE_SIZE, offset }),
+        api.tasks.list({
+          status: status || undefined,
+          source: source || undefined,
+          missing: missing || undefined,
+          priority: priority || undefined,
+          sort,
+          limit: PAGE_SIZE,
+          offset,
+          scope: showCompleted ? "completed" : "active",
+        }),
         api.conflicts.list({ resolved: false }),
       ]);
       setTasks(taskResult.tasks);
@@ -131,9 +163,9 @@ export default function TasksPage() {
     // re-render → no recreated callback → next fetch ships without the
     // filter. ``status`` / ``source`` / ``sort`` are in the same boat;
     // page-reset alone is not enough.
-  }, [status, source, sort, missing, priority, page]);
+  }, [status, source, sort, missing, priority, showCompleted, page]);
 
-  useEffect(() => { setPage(1); }, [status, source, sort, missing, priority]);
+  useEffect(() => { setPage(1); }, [status, source, sort, missing, priority, showCompleted]);
   useEffect(() => { void load(page); }, [load, page]);
 
   // Phase 2 — load the high-priority-no-deadline counter independently of
@@ -391,6 +423,19 @@ export default function TasksPage() {
           </select>
         </label>
 
+        <label
+          className="flex items-center gap-2 self-end pb-2 cursor-pointer select-none"
+          title="Bật để xem RIÊNG task đã xong (progress=done) hoặc đã qua deadline & confirmed. Tắt: chỉ xem active list. Pending overdue luôn ở active."
+        >
+          <input
+            type="checkbox"
+            checked={showCompleted}
+            onChange={(e) => setShowCompleted(e.target.checked)}
+            className="h-3.5 w-3.5 rounded border-[var(--border)] text-[var(--accent)] focus:ring-[var(--accent)] cursor-pointer"
+          />
+          <span className="text-xs text-[var(--muted)]">Show completed only</span>
+        </label>
+
         <div className="ml-auto flex gap-2">
           <button
             type="button"
@@ -424,7 +469,11 @@ export default function TasksPage() {
           <svg className="w-10 h-10 mx-auto text-[var(--muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
           </svg>
-          <p className="text-sm text-[var(--muted)]">No tasks yet. Sync from Gmail/Drive or upload a file.</p>
+          <p className="text-sm text-[var(--muted)]">
+            {showCompleted
+              ? "No completed tasks yet — mark something done in /tracking or wait for a confirmed task's deadline to pass."
+              : "No tasks yet. Sync from Gmail/Drive or upload a file."}
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -448,20 +497,59 @@ export default function TasksPage() {
                   // visual signal so the user spots them in a long list without
                   // having to scan every chip.
                   const needsReview = t.status === "pending" || (t.missing_fields?.length ?? 0) > 0;
+                  // Same predicate as backend completed-filter — when Show
+                  // completed is on, dim & strike-through completed rows so
+                  // the user can distinguish them from active work.
+                  const todayIso = new Date().toISOString().slice(0, 10);
+                  const isCompleted =
+                    t.progress_state === "done" ||
+                    (t.status === "confirmed" && t.deadline != null && t.deadline < todayIso);
                   return (
                   <tr
                     key={t.id}
                     className={cn(
                       "group transition-colors",
-                      needsReview
-                        ? "bg-amber-500/[0.04] hover:bg-amber-500/[0.08] [&_td:first-child]:border-l-2 [&_td:first-child]:border-l-amber-500/60"
-                        : "hover:bg-[var(--card-hover)]"
+                      isCompleted
+                        ? "opacity-60 hover:opacity-100 hover:bg-[var(--card-hover)]"
+                        : needsReview
+                          ? "bg-amber-500/[0.04] hover:bg-amber-500/[0.08] [&_td:first-child]:border-l-2 [&_td:first-child]:border-l-amber-500/60"
+                          : "hover:bg-[var(--card-hover)]"
                     )}
                   >
                     <td className="px-4 py-3">
-                      <Link href={`/tasks/${t.id}`} className="text-[var(--accent)] hover:underline font-medium">
+                      <Link
+                        href={`/tasks/${t.id}`}
+                        className={cn(
+                          "text-[var(--accent)] hover:underline font-medium",
+                          isCompleted && "line-through decoration-[var(--muted)]/60"
+                        )}
+                      >
                         {t.title}
                       </Link>
+                      {isCompleted && (
+                        <span
+                          className="ml-2 inline-block rounded border border-[var(--border)] bg-[var(--surface-2)] px-1.5 py-0 text-[10px] uppercase tracking-wide text-[var(--muted)] align-middle"
+                          title={
+                            t.progress_state === "done"
+                              ? "Marked done in /tracking"
+                              : "Confirmed, deadline đã qua"
+                          }
+                        >
+                          Completed
+                        </span>
+                      )}
+                      {/* Phase 6.6: recurrence indicator. Active rule shows
+                          as primary badge; the LLM suggestion shows as the
+                          "pending review" amber badge so the user knows to
+                          click into the task. */}
+                      {(t.recurrence_rule || (t.recurrence_suggested && !t.recurrence_dismissed_at)) && (
+                        <span className="ml-2 inline-flex">
+                          <RecurrenceBadge
+                            rule={t.recurrence_rule ?? t.recurrence_suggested}
+                            variant={t.recurrence_rule ? "active" : "suggested"}
+                          />
+                        </span>
+                      )}
                       {t.description && (
                         <p className="mt-1 text-xs text-[var(--muted)] line-clamp-2 max-w-[36rem]">{t.description}</p>
                       )}

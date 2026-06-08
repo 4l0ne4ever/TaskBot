@@ -80,6 +80,13 @@ async def async_dispatch_notifications(state: PipelineState) -> dict:
                     if getattr(task, "deadline_time", None) is not None
                     else None
                 )
+                # Phase 6.6 (2026-06-03): when recurrence_rule is set, the
+                # event is created/updated as a Google Calendar recurring
+                # series. recurrence_suggested (LLM-detected, awaiting user
+                # confirm) is NOT dispatched — only the explicit recurrence_rule
+                # drives the calendar so a dismissed suggestion never reaches
+                # Google.
+                recurrence_rule = getattr(task, "recurrence_rule", None) or None
                 try:
                     if task.calendar_event_id:
                         update_resp = await calendar.update_event(
@@ -88,6 +95,7 @@ async def async_dispatch_notifications(state: PipelineState) -> dict:
                             date_iso=date_iso,
                             description=f"Auto-synced task {task.id}",
                             time_str=time_str,
+                            recurrence_rule=recurrence_rule,
                         )
                         event_id = str(update_resp.get("event_id") or task.calendar_event_id)
                     else:
@@ -96,6 +104,7 @@ async def async_dispatch_notifications(state: PipelineState) -> dict:
                             date_iso=date_iso,
                             description=f"Task {task.id}",
                             time_str=time_str,
+                            recurrence_rule=recurrence_rule,
                         )
                         event_id = str(create_resp.get("event_id") or "")
                     task.calendar_event_id = event_id or task.calendar_event_id

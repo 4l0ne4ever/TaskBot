@@ -6,8 +6,11 @@ from __future__ import annotations
 import asyncio
 import uuid
 
+from sqlalchemy import update
+
 from app.db.session import AsyncSessionLocal
 from app.models.pipeline_run import PipelineRun
+from app.models.source_document import SourceDocument
 
 from .._runtime import get_redis, logger, settings
 from ..pipeline_runner import invoke_pipeline, mark_run_failed
@@ -97,7 +100,24 @@ async def process_upload_job(
             # calendar create when access_token is missing — same fail-safe
             # already used for other no-OAuth contexts.
         }
-        await invoke_pipeline(state)
+        final_state = await invoke_pipeline(state)
+
+        # Persist the parsed text into ``source_documents.raw_text`` so the
+        # conflict UI can render the file body and ``HighlightExcerpt`` can
+        # highlight ``evidence_quote`` — parity with gmail.py:278. The backend
+        # creates the source_document row at upload time with raw_text=NULL
+        # because text extraction (PDF/DOCX → text) only happens inside the
+        # pipeline's parse_input node, so we write back here.
+        cleaned_text = (final_state or {}).get("cleaned_text") or ""
+        if cleaned_text:
+            async with AsyncSessionLocal() as session:
+                async with session.begin():
+                    await session.execute(
+                        update(SourceDocument)
+                        .where(SourceDocument.id == uuid.UUID(source_doc_id))
+                        .values(raw_text=cleaned_text[:50_000])
+                    )
+
         await _set_upload_status(upload_id, "done")
         logger.info("upload pipeline ok: upload_id=%s file=%s", upload_id, file_name)
     except Exception as exc:

@@ -186,6 +186,156 @@ def test_save_persists_scope_multi_source():
 
 
 @_db_required
+def test_multi_source_uses_task_id_b_not_source_b_ref_for_task_ids():
+    """Regression for the 2026-06-08 phantom-conflict bug.
+
+    multi_source emit sets source_b_ref to the *source_documents.id* of the
+    matching existing task (display + linkage). The consumer used to parse
+    source_b_ref as a task UUID, which silently put a source_doc id into
+    conflicts.task_ids[2] — the UI then failed to resolve it to a real task
+    and rendered 'Source content not available'. The fix is to read
+    task_id_b first; this test seeds an existing task, fires a multi_source
+    conflict pointing at that task, and asserts task_ids[2] is the real
+    task uuid (not the source_doc id).
+    """
+    from sqlalchemy import select
+
+    from app.db.session import AsyncSessionLocal
+    from app.models import Conflict, SourceDocument, Task
+    from app.services.save_tasks_service import save_tasks_sync
+
+    user_id, doc_id = asyncio.run(_seed_user_and_doc())
+    try:
+        # Seed an existing task tied to a *different* source doc — that's
+        # what the multi_source detector would have matched against.
+        existing_doc_id = uuid.uuid4()
+        existing_task_id = uuid.uuid4()
+
+        async def _seed_existing() -> None:
+            async with AsyncSessionLocal() as s:
+                async with s.begin():
+                    s.add(
+                        SourceDocument(
+                            id=existing_doc_id,
+                            user_id=user_id,
+                            source_type="gmail",
+                            source_ref=f"existing-{existing_doc_id}",
+                            content_hash=hashlib.sha256(existing_doc_id.bytes).hexdigest(),
+                            raw_text="existing source body",
+                        )
+                    )
+                    s.add(
+                        Task(
+                            id=existing_task_id,
+                            user_id=user_id,
+                            source_doc_id=existing_doc_id,
+                            title="Submit Q1 report",
+                            status="confirmed",
+                        )
+                    )
+
+        asyncio.run(_seed_existing())
+
+        # Build the state as the detector would have produced it AFTER fix.
+        state = _state_with_conflict(
+            user_id, doc_id, scope="multi_source", conflict_type="multi_source"
+        )
+        state["conflicts"][0]["source_b_ref"] = str(existing_doc_id)  # display ref
+        state["conflicts"][0]["task_id_b"] = str(existing_task_id)    # new explicit field
+
+        out = save_tasks_sync(state)
+        assert out.get("errors") == [], f"unexpected save errors: {out.get('errors')}"
+
+        async def _read_task_ids() -> list:
+            async with AsyncSessionLocal() as s:
+                rows = (
+                    await s.execute(
+                        select(Conflict).where(Conflict.user_id == user_id)
+                    )
+                ).scalars().all()
+                return [(r.task_ids, r.source_b_ref) for r in rows]
+
+        rows = asyncio.run(_read_task_ids())
+        assert len(rows) == 1
+        task_ids, src_b = rows[0]
+        # pos 2 MUST be the existing task uuid — not the source_doc uuid.
+        assert existing_task_id in task_ids
+        assert existing_doc_id not in task_ids
+        # source_b_ref keeps the source_doc id for display layer (unchanged).
+        assert src_b == str(existing_doc_id)
+    finally:
+        asyncio.run(_cleanup(user_id))
+
+
+@_db_required
+def test_thread_update_still_resolves_task_id_from_source_b_ref_fallback():
+    """thread_update / inter_doc detectors keep embedding the task uuid in
+    source_b_ref (see conflict_detectors.py L146 — ``existing.id`` fallback).
+    The consumer's fallback parse must still kick in when task_id_b is
+    absent, otherwise we'd regress those scopes."""
+    from sqlalchemy import select
+
+    from app.db.session import AsyncSessionLocal
+    from app.models import Conflict, SourceDocument, Task
+    from app.services.save_tasks_service import save_tasks_sync
+
+    user_id, doc_id = asyncio.run(_seed_user_and_doc())
+    try:
+        existing_doc_id = uuid.uuid4()
+        existing_task_id = uuid.uuid4()
+
+        async def _seed_existing() -> None:
+            async with AsyncSessionLocal() as s:
+                async with s.begin():
+                    s.add(
+                        SourceDocument(
+                            id=existing_doc_id,
+                            user_id=user_id,
+                            source_type="gmail",
+                            source_ref=f"existing-tu-{existing_doc_id}",
+                            content_hash=hashlib.sha256(existing_doc_id.bytes).hexdigest(),
+                            raw_text="existing thread body",
+                        )
+                    )
+                    s.add(
+                        Task(
+                            id=existing_task_id,
+                            user_id=user_id,
+                            source_doc_id=existing_doc_id,
+                            title="Submit Q1 report",
+                            status="confirmed",
+                        )
+                    )
+
+        asyncio.run(_seed_existing())
+
+        state = _state_with_conflict(
+            user_id, doc_id, scope="thread_update", conflict_type="deadline_conflict"
+        )
+        # thread_update emit puts the task uuid in source_b_ref; no task_id_b.
+        state["conflicts"][0]["source_b_ref"] = str(existing_task_id)
+        state["conflicts"][0].pop("task_id_b", None)
+
+        out = save_tasks_sync(state)
+        assert out.get("errors") == [], f"unexpected save errors: {out.get('errors')}"
+
+        async def _read() -> list:
+            async with AsyncSessionLocal() as s:
+                rows = (
+                    await s.execute(
+                        select(Conflict).where(Conflict.user_id == user_id)
+                    )
+                ).scalars().all()
+                return [r.task_ids for r in rows]
+
+        task_id_arrays = asyncio.run(_read())
+        assert len(task_id_arrays) == 1
+        assert existing_task_id in task_id_arrays[0]
+    finally:
+        asyncio.run(_cleanup(user_id))
+
+
+@_db_required
 def test_save_tolerates_missing_scope_legacy_shape():
     """Defensive: a conflict dict without a ``scope`` key (e.g. legacy
     in-flight records from before Phase A') must still save without error;

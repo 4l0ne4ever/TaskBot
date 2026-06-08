@@ -345,10 +345,15 @@ def detect_multi_source_conflicts(
                         f"and {new_source_type or 'current'} (new)"
                     ),
                     "source_a_ref": new_ref,
-                    # Store the existing source_doc_id as the b-ref so the
-                    # downstream save_tasks_service persists the linkage
-                    # without needing a new column.
+                    # source_b_ref is the source_documents.id of the existing
+                    # match (display/linkage). task_id_b is the actual task
+                    # UUID — save_tasks_service uses it for the conflicts.task_ids
+                    # array. Without task_id_b the consumer historically parsed
+                    # source_b_ref as a task UUID, landing source_doc IDs in
+                    # task_ids[2] (phantom rows that the conflicts UI couldn't
+                    # resolve to a real task; 2026-06-08 forensic).
                     "source_b_ref": cand_doc,
+                    "task_id_b": cand.get("id"),
                     "task_title": new_task.get("title") or title_new,
                     "scope": "multi_source",
                 }

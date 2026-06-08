@@ -130,13 +130,15 @@ def build_brief_data(
             })
 
         # Phase 3 — needs-deadline bucket for high/medium-priority
-        # non-dismissed tasks without a deadline. Read priority safely;
-        # test fakes (SimpleNamespace) may omit the attribute entirely.
+        # non-dismissed, not-done tasks without a deadline. Read priority
+        # safely; test fakes (SimpleNamespace) may omit the attribute.
+        # Done-state exclusion aligns the brief with /tasks default-archive.
         prio = getattr(t, "priority", None)
         if (
             dl is None
             and prio in ("high", "medium")
             and t.status != "dismissed"
+            and getattr(t, "progress_state", None) != "done"
         ):
             needs_deadline_all.append({
                 "title": getattr(t, "title", None) or "(untitled)",

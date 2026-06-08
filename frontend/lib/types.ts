@@ -38,6 +38,13 @@ export interface Task {
   // Phase 4 (no-deadline UX): Google-Tasks-like tracking state. Backend
   // returns null for legacy rows; the Tracking UI treats null as "todo".
   progress_state: ProgressState | null;
+  // Phase 6.6 (recurring events): active RRULE drives the Google Calendar
+  // recurring event; recurrence_suggested is the LLM-detected rule pending
+  // user confirm; recurrence_dismissed_at suppresses re-suggestion on
+  // re-sync of the same task.
+  recurrence_rule: string | null;
+  recurrence_suggested: string | null;
+  recurrence_dismissed_at: string | null;
   source_doc_id: string | null;
   source_type: string | null;
   created_at: string;

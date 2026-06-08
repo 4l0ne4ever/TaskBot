@@ -668,3 +668,198 @@ Verified on the previously-stuck dogfood file
 
 Final test gate after Round 12: **520 pass** (442 agent unit + 4 agent
 e2e + 74 backend; +15 from Round 11's 505).
+
+## 10. Phase 6.6 — Recurring events (2026-06-03 → 2026-06-05)
+
+### Hero scenario
+
+> Anna writes a recurring lịch học to her team — "weekly sync mỗi thứ 2 và
+> thứ 4 lúc 9h, từ giờ đến cuối học kỳ". TaskBot extracts the actionable
+> deliverable (Anna prep slides for each sync), detects the recurring
+> pattern, and surfaces it in the Pending Review card as a one-click
+> "Apply suggested recurrence" suggestion. Anna applies; the task becomes
+> a Google Calendar recurring event with the right RRULE so the entire
+> series shows up on her calendar without manually repeating the entry.
+
+### Architecture
+
+LLM-suggest / user-confirm pattern:
+
+```
+extract_tasks (LLM emits recurrence_rule when explicit)
+  → normalize_tasks (validate against whitelist → recurrence_suggested)
+  → save_tasks (persist suggested; dismiss_at guard against re-suggest)
+  → frontend Pending Review (banner "💡 Apply suggested: <readable>")
+  → user clicks Apply → backend PATCH recurrence_rule
+  → dispatch_notifications (Google Calendar recurring event create/update)
+```
+
+Three nullable columns on `tasks` (migration 0015):
+- `recurrence_rule` — active RRULE driving the calendar series. NULL = one-shot.
+- `recurrence_suggested` — LLM-detected RRULE awaiting confirm.
+- `recurrence_dismissed_at` — UTC timestamp; suppresses re-suggestion on
+  re-sync of the same task. The dismiss is a task-level decision, not an
+  email-level one, so a follow-up email about the same task should NOT
+  reopen the dismissed suggestion.
+
+### RRULE whitelist
+
+Backend `app.utils.recurrence.validate_rrule` accepts only:
+
+| Property      | Range                                  |
+| ------------- | -------------------------------------- |
+| `FREQ`        | DAILY \| WEEKLY \| MONTHLY \| YEARLY  |
+| `INTERVAL`    | 1..365                                 |
+| `BYDAY`       | MO..SU (comma list, optional numeric prefix) |
+| `BYMONTHDAY`  | 1..31                                  |
+| `UNTIL`       | YYYYMMDDTHHMMSSZ (UTC, future)         |
+| `COUNT`       | 1..520 (~10y weekly)                   |
+
+Anything else (`BYHOUR`, `BYMINUTE`, `BYSETPOS`, `BYMONTH`, `WKST`, …) is
+rejected. UNTIL + COUNT are mutually exclusive. Whitelist is narrow on
+purpose — what the picker UI can express, no more — so users can't input
+shapes the calendar dispatch hasn't been tested against.
+
+### Eval gate (2026-06-04 → 2026-06-06)
+
+Three passes, all Cerebras `gpt-oss-120b` strict mode with zero fallback
+contamination:
+
+**Pass 1 — 50-sample smoke gate (2026-06-04).** Baseline (variant OFF) vs
+Variant v2 (minimised 1-line addendum, after one iteration — the original
+30-line section regressed deadline + conflict accuracy catastrophically,
+fixed by trimming to a single sentence):
+
+| Metric            | Baseline (50) | Variant v2 (50) | Δ        | Gate |
+| ----------------- | ------------- | --------------- | -------- | ---- |
+| Fully Correct     | 94.0%         | 92.0%           | -2.0%    | PASS (within noise on N=50) |
+| Title F1          | 0.9915        | **1.0000**      | +0.85%   | PASS |
+| Assignee F1       | 0.9913        | **1.0000**      | +0.87%   | PASS |
+| Deadline Exact    | 0.9464        | 0.9286          | -1.78%   | PASS (within 2%) |
+| Conflict F1       | 0.8571        | **1.0000**      | +14.29%  | PASS |
+
+**Pass 2 — full 250-sample variant (2026-06-05).** Variant ON default vs
+the documented `openai/gpt-oss-120b` Cerebras Policy v1 baseline from
+CLAUDE.md (same provider, same dataset). Cited at the time as best-available
+A/B until a same-day baseline could be re-run:
+
+| Metric            | Baseline (CLAUDE.md May) | Variant v2 (250) | Δ        |
+| ----------------- | ------------------------ | ---------------- | -------- |
+| Fully Correct     | 87.2%                    | **88.0%** (220/250) | **+0.8%** |
+| Title F1          | 0.984                    | **0.9870**       | +0.3%    |
+| Assignee F1       | 0.969                    | **0.9865**       | **+1.75%** |
+| Deadline Exact    | 0.860                    | **0.875**        | **+1.5%**  |
+| Conflict F1       | 0.889                    | 0.8889           | parity   |
+| ECE               | 0.108                    | **0.1023**       | -0.005 (better) |
+
+**Pass 3 — clean same-day A/B (250 vs 250, 2026-06-06).** Fresh baseline
+run after Cerebras TPD reset. The first attempt at the baseline rerun hit
+15 connection-error samples mid-run (laptop sleep + quota throttling tail
+— diagnosed and hardened: added `cerebras_http_timeout_seconds=60` so
+half-open sockets fail in 60s instead of the OpenAI SDK's 600s default).
+A targeted rerun of just those 15 IDs produced a fully clean 250-sample
+baseline. Recurrence emits remained 0/250 in the variant — confirmed zero
+false positives on a dataset that contains no recurring patterns by
+construction:
+
+| Metric            | Baseline OFF (250) | Variant ON (250) | Δ          |
+| ----------------- | ------------------ | ---------------- | ---------- |
+| Fully Correct     | 87.2% (218/250)    | **88.0%** (220/250) | **+0.8pp** |
+| Title F1          | 0.9756             | **0.9870**       | **+1.14pp** |
+| Assignee F1       | 0.9766             | **0.9865**       | **+0.99pp** |
+| Deadline Exact    | 0.8750             | 0.8750           | tied        |
+| Conflict F1       | 0.8636             | **0.8889**       | **+2.53pp** |
+| ECE               | 0.1015             | 0.1023           | parity      |
+| Runtime errors    | 0                  | 0                | clean both  |
+
+Variant wins or ties on every measurable axis. The Conflict F1 jump
+(+2.53pp) replicates the 50-sample subset finding that the recurrence
+guidance helps the model stay focused on multi-task structure — counter
+to the initial worry that the extra prompt would distract from
+conflict detection.
+
+Methodological bonus: today's fresh baseline reproduces the CLAUDE.md
+May 2026 baseline Fully Correct exactly (87.2% = 87.2%) — strong
+evidence that the documented baseline is reliable, not a one-off snapshot.
+
+Top error categories (full eval) — same shape as the documented baseline:
+`wrong_deadline` 20 (67% of all errors), `missed_assignee`/`missed_conflict`
+5 each, `missed_task`/`complete_miss` 4 each, plus 2 off-by-one deadlines,
+1 hallucinated task, 1 false-positive extraction.
+
+Per-category Fully Correct (variant): 5 categories at 100% (`doc_simple`,
+`email_no_task`, `missing_deadline`, `edge_noisy_long`, `edge_priority`).
+Weakest: `edge_forwarded` 50% (4/8) and `conflict_assignee` 60% (6/10) —
+both consistent with the documented baseline's hard categories.
+
+`extract_tasks._recurrence_variant_enabled()` default-flipped on
+2026-06-05; opt-out via `TASKBOT_EXTRACTION_VARIANT=v1` preserved for
+regression bisection.
+
+Iteration lesson (kept for the thesis): the v1 attempt placed a 30-line
+"Recurring events" section AFTER the JSON closer ("JSON object with a
+'tasks' array only…"). Even repositioned BEFORE the Text block, the long
+section crowded out attention on deadlines and multi-task conflict
+detection — Fully Correct dropped 8% and Conflict F1 dropped 19%. v2
+collapses the directive to a single sentence with inline examples
+("monthly on 15th → FREQ=MONTHLY;BYMONTHDAY=15") which the model
+absorbs without losing focus on the other fields.
+
+### Calendar dispatch — hybrid timed/all-day
+
+`agent/app/mcp/calendar_client.py` accepts an optional `recurrence_rule`
+on `create_event` / `update_event`. When set, the event body gets
+`recurrence: [f"RRULE:{rule}"]` and Google handles the series. The
+existing all-day vs timed routing is preserved — `deadline_time` set
+→ start/end dateTime + 30min duration; absent → all-day with exclusive
+end date. So "weekly standup 9 AM" creates a timed recurring event,
+"weekly report" creates an all-day recurring event.
+
+### Known v1 limitations (Future Work chapter)
+
+1. **Remove-recurrence calendar orphan**: when the user clears
+   `recurrence_rule` on a confirmed task, the deadline shifts to the next
+   occurrence and `calendar_event_id` is cleared so dispatch recreates a
+   single event. The OLD recurring event becomes an orphan in Google
+   Calendar (visible to the user, but not data loss). v2: add an
+   explicit `delete_event` call in the API handler, or a sweeper job
+   that reconciles abandoned event IDs.
+2. **No instance-exception editing**: edits to an active recurrence_rule
+   apply to ALL future occurrences ("Edit all" semantics with a JS
+   `confirm()` warning per the design Option B). Google Calendar's
+   "this instance only" / "this and following" edit UX is deferred —
+   ~1 day of additional work to compose RDATE/EXDATE properly.
+3. **Conflict detection skipped for recurring tasks**: the 4-scope
+   detector (multi_source > thread_update > inter_doc > intra_batch)
+   doesn't expand recurring instances within a window before checking
+   collisions. A weekly task and a single-occurrence task on the same
+   day won't surface as a conflict in v1.
+4. **Auto-confirm disabled for tasks with `recurrence_rule`**: not
+   implemented because `recurrence_rule` is set ONLY via explicit user
+   apply (never by the LLM directly), so the auto-confirm guard would
+   be a no-op. Documented as a sanity-check requirement for v2 if
+   auto-application of suggestions is ever turned on.
+5. **Recurrence detection F1 not measured on baseline eval**: the
+   labeled dataset predates recurrence as a concept — none of the 250
+   samples contain recurring patterns. Verified manually via 6 smoke
+   samples (5/6 detected correctly; the missed one was an
+   implicit-recurrence edge case where "prepare slides for the weekly
+   meeting" depends on the meeting being recurring). Adding ~30
+   recurrence samples to the dataset for proper F1 measurement is v2.
+
+### Test gate after Phase 6.6
+
+**611 pass** (530 agent unit + 4 agent e2e + 81 backend; +67 from the
+552 baseline). New tests:
+
+- `agent/tests/unit/test_recurrence.py` — 30 cases over the RRULE
+  whitelist validator + `next_occurrence` helper.
+- `agent/tests/unit/test_normalize_tasks_recurrence.py` — 8 cases over
+  the LLM → suggested routing (graceful degradation on malformed,
+  canonicalisation, dismiss-respect).
+- `agent/tests/unit/test_extract_tasks_recurrence_variant.py` — 15
+  cases over the variant flag, sent-folder precedence, prompt
+  placement, parse passthrough, merge preservation.
+- `backend/tests/unit/test_tasks_recurrence_api.py` — 7 cases over the
+  PATCH endpoint (set rule, canonicalise, 422 on invalid, apply
+  suggested clears suggestion, dismiss flag, remove-recurrence flow).

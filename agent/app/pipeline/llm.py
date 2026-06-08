@@ -103,6 +103,10 @@ def _get_cerebras_client() -> Any:
         _cerebras_client_cached = OpenAI(
             api_key=settings.cerebras_api_key,
             base_url=settings.cerebras_base_url,
+            # Bound per-call wall clock so a half-open socket (laptop sleep
+            # mid-eval, network reset, ISP hiccup) fails fast instead of
+            # eating the OpenAI SDK's 600s default. See cerebras_http_timeout_seconds.
+            timeout=settings.cerebras_http_timeout_seconds,
         )
         return _cerebras_client_cached
 

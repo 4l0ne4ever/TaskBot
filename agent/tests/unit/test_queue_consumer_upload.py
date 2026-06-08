@@ -60,12 +60,18 @@ def stubs(monkeypatch):
     monkeypatch.setattr(upload_mod.settings, "aws_access_key_id", "x", raising=False)
     monkeypatch.setattr(upload_mod.settings, "aws_secret_access_key", "y", raising=False)
 
-    # Stub the DB session helper — handler only uses it to insert a PipelineRun.
+    # Stub the DB session helper — handler uses it both to insert a
+    # PipelineRun and (after pipeline) to UPDATE source_documents.raw_text,
+    # so capture executed statements for tests that care.
+    captured["executed"] = []
     class _FakeSession:
         async def __aenter__(self): return self
         async def __aexit__(self, *exc): return False
         def add(self, *a, **kw): captured["session_used"] = True
         async def flush(self): pass
+        async def execute(self, stmt, *a, **kw):
+            captured["executed"].append(stmt)
+            return None
         def begin(self): return _FakeBegin()
     class _FakeBegin:
         async def __aenter__(self): return None
@@ -124,6 +130,49 @@ def test_upload_failure_flips_status_to_failed(stubs, monkeypatch):
     # First "extracting", then "failed" — the UI sees something honest
     # instead of an eternal spinner.
     assert statuses[-1] == "failed"
+
+
+def test_upload_persists_cleaned_text_into_raw_text(stubs, monkeypatch):
+    """parse_input populates state['cleaned_text']; the upload processor must
+    write it back to source_documents.raw_text so the conflict UI can show
+    the file body and HighlightExcerpt can highlight the evidence quote
+    (parity with gmail.py:278 where raw_text is persisted on doc insert).
+    Without this the UI shows 'No text content.' and source highlighting
+    only works for gmail — that's exactly what the user saw on 2026-06-08.
+    """
+    extracted = "Emily, please write release notes v3.0 by 18/06/2026."
+
+    async def fake_invoke(state):
+        return {**state, "cleaned_text": extracted}
+    monkeypatch.setattr(upload_mod, "invoke_pipeline", fake_invoke)
+
+    asyncio.run(upload_mod.process_upload_job(
+        _USER_ID,
+        source_doc_id=_DOC_ID, s3_key="x.pdf", file_name="x.pdf", upload_id=_UPLOAD_ID,
+    ))
+
+    # Exactly one UPDATE on source_documents carrying the parsed text.
+    update_stmts = [s for s in stubs["executed"] if "UPDATE source_documents" in str(s)]
+    assert len(update_stmts) == 1
+    compiled = str(update_stmts[0].compile(compile_kwargs={"literal_binds": True}))
+    assert extracted in compiled
+
+
+def test_upload_skips_raw_text_persist_when_pipeline_yields_empty_text(stubs, monkeypatch):
+    """Defensive: if parse_input bails (corrupt PDF → cleaned_text=''), we
+    must not blast the existing row with empty text or raise. Existing
+    raw_text (if any) stays put — fail-safe instead of fail-loud."""
+    async def fake_invoke(state):
+        return {**state, "cleaned_text": ""}
+    monkeypatch.setattr(upload_mod, "invoke_pipeline", fake_invoke)
+
+    asyncio.run(upload_mod.process_upload_job(
+        _USER_ID,
+        source_doc_id=_DOC_ID, s3_key="x.pdf", file_name="x.pdf", upload_id=_UPLOAD_ID,
+    ))
+
+    update_stmts = [s for s in stubs["executed"] if "UPDATE source_documents" in str(s)]
+    assert update_stmts == []
 
 
 def test_upload_raises_when_aws_not_configured(stubs, monkeypatch):

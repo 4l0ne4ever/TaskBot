@@ -1,9 +1,10 @@
 import asyncio
 import uuid
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 
+from app.config import get_settings
 from app.db.session import AsyncSessionLocal
 from app.models.conflict import Conflict
 from app.models.pipeline_run import PipelineRun
@@ -13,6 +14,8 @@ from app.pipeline.state import PipelineState
 from app.services.assignee_resolver import get_default_resolver
 from app.services.entity_extractor import update_entity_graph_for_tasks
 from app.services.task_dedupe import pick_task_to_reuse
+
+settings = get_settings()
 
 
 def _parse_deadline(value: object) -> date | None:
@@ -166,6 +169,48 @@ async def async_save_tasks(state: PipelineState) -> dict:
                     )
                     reuse_rows = list((await session.execute(pool_stmt)).scalars().all())
 
+                # 2026-06-07 cross-thread dedup pool: in-group match (above)
+                # only catches re-sync within one Gmail thread. The same task
+                # mentioned across distinct threads (a follow-up sent in a new
+                # email rather than a reply) used to create duplicate rows.
+                # Build a separate candidate pool from this user's recent
+                # active tasks where assignee matches; consume it later with a
+                # stricter title-similarity threshold than the in-group pool
+                # to avoid false-merging neighbours like "Submit Q1 report" vs
+                # "Submit Q2 report". SQL pre-filters keep the pool small
+                # (recent + non-completed + assignee-match); the strict
+                # title-similarity gate runs in Python.
+                in_group_ids = {r.id for r in reuse_rows}
+                lookback_cutoff = datetime.now(UTC) - timedelta(days=30)
+                candidate_assignees: set[str] = {
+                    (vt.get("assignee") or "").strip().lower()
+                    for vt in validated_tasks
+                    if isinstance(vt.get("assignee"), str) and vt.get("assignee").strip()
+                }
+                cross_thread_rows: list[Task] = []
+                if candidate_assignees:
+                    today_dt = date.today()
+                    cross_stmt = (
+                        select(Task)
+                        .where(
+                            Task.user_id == user_uuid,
+                            Task.created_at >= lookback_cutoff,
+                            func.lower(func.coalesce(func.trim(Task.assignee), "")).in_(candidate_assignees),
+                            Task.status != "dismissed",
+                            or_(Task.progress_state.is_(None), Task.progress_state != "done"),
+                            or_(
+                                Task.deadline.is_(None),
+                                Task.deadline >= today_dt,
+                                Task.status != "confirmed",
+                            ),
+                        )
+                    )
+                    cross_thread_rows = [
+                        r
+                        for r in (await session.execute(cross_stmt)).scalars().all()
+                        if r.id not in in_group_ids
+                    ]
+
                 # Titles that appear in an intra-batch conflict — auto-confirm
                 # must not fire for conflicted tasks; they need human review.
                 conflicting_titles: set[str] = {
@@ -186,6 +231,18 @@ async def async_save_tasks(state: PipelineState) -> dict:
                     best: Task | None = None
                     if group_id:
                         best = pick_task_to_reuse(reuse_rows, tkey, excluded_ids=reused_ids)
+                    if best is None and cross_thread_rows:
+                        # Cross-thread dedup uses a stricter threshold than
+                        # the in-group reuse so neighbours like Q1/Q2 reports
+                        # do not get false-merged. SQL pre-filter requires
+                        # assignee match; pick_task_to_reuse adds the
+                        # title-similarity gate.
+                        best = pick_task_to_reuse(
+                            cross_thread_rows,
+                            tkey,
+                            excluded_ids=reused_ids,
+                            threshold=settings.cross_thread_dedup_threshold,
+                        )
                     if best is not None:
                         reused_ids.add(best.id)
                         best.previous_revision = {
@@ -222,6 +279,15 @@ async def async_save_tasks(state: PipelineState) -> dict:
                         best.evidence_quote = (
                             vt.get("evidence_quote") if isinstance(vt.get("evidence_quote"), str) else None
                         )
+                        # Phase 6.6 (2026-06-03): persist LLM-suggested recurrence
+                        # when the task is re-extracted, BUT respect a prior
+                        # user dismiss (recurrence_dismissed_at IS NOT NULL) — a
+                        # dismiss is a task-level decision and must not be
+                        # overwritten by re-suggestion on re-sync. Active
+                        # recurrence_rule (user-confirmed) is left untouched.
+                        new_suggested = vt.get("recurrence_suggested") if isinstance(vt.get("recurrence_suggested"), str) else None
+                        if getattr(best, "recurrence_dismissed_at", None) is None:
+                            best.recurrence_suggested = new_suggested
                         best.source_doc_id = source_doc_uuid
                         best.updated_at = datetime.now(UTC)
                         if best.status == "confirmed":
@@ -259,6 +325,11 @@ async def async_save_tasks(state: PipelineState) -> dict:
                             uncertainty=vt.get("uncertainty") if isinstance(vt.get("uncertainty"), dict) else None,
                             missing_fields=list(vt.get("missing_fields") or []),
                             evidence_quote=vt.get("evidence_quote") if isinstance(vt.get("evidence_quote"), str) else None,
+                            # Phase 6.6: LLM-detected recurrence is a suggestion
+                            # only — never auto-applied to recurrence_rule.
+                            # recurrence_rule stays NULL until the user clicks
+                            # "Apply" via the frontend Pending Review.
+                            recurrence_suggested=vt.get("recurrence_suggested") if isinstance(vt.get("recurrence_suggested"), str) else None,
                         )
                         # Auto-confirm: high-confidence new tasks need zero clicks.
                         # Criteria: pipeline's calibrated band (uncertainty IS NULL)
@@ -299,10 +370,17 @@ async def async_save_tasks(state: PipelineState) -> dict:
                     if isinstance(task_title, str) and task_title.strip() in title_to_new_id:
                         task_ids.append(title_to_new_id[task_title.strip()])
                     ref_b = c.get("source_b_ref")
-                    if ref_b:
+                    # Prefer an explicit task_id_b when the detector emitted
+                    # one (multi_source does; source_b_ref there is a source
+                    # document id, not a task id). For thread_update /
+                    # inter_doc the detector still embeds the task UUID in
+                    # source_b_ref, so the fallback parse keeps working.
+                    explicit_tid_b = c.get("task_id_b")
+                    existing_tid = _parse_uuid(str(explicit_tid_b)) if explicit_tid_b else None
+                    if not existing_tid and ref_b:
                         existing_tid = _parse_uuid(str(ref_b))
-                        if existing_tid:
-                            task_ids.append(existing_tid)
+                    if existing_tid:
+                        task_ids.append(existing_tid)
                     scope_val = c.get("scope")
                     session.add(
                         Conflict(

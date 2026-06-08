@@ -36,6 +36,11 @@ class Task(Base):
     # Phase 4 (no-deadline UX): Google-Tasks-like tracking column. Values:
     # "todo" | "in_progress" | "done". NULL = legacy → UI treats as "todo".
     progress_state: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Phase 6.6 (recurring events, 2026-06-03): LLM suggest + user confirm.
+    # See agent/app/models/task.py for the field semantics — kept in sync.
+    recurrence_rule: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recurrence_suggested: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recurrence_dismissed_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
     previous_revision: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

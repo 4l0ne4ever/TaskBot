@@ -1,4 +1,5 @@
 import json
+import os
 import re
 
 from app.config import get_settings
@@ -6,8 +7,10 @@ from app.pipeline.llm import call_llm, llm_call_context
 from app.pipeline.policy import get_pipeline_policy
 from app.pipeline.prompts import (
     EXTRACTION_RETRY_HINT_V1,
+    EXTRACTION_SYSTEM_RECURRENCE,
     EXTRACTION_SYSTEM_SENT,
     EXTRACTION_SYSTEM_V1,
+    EXTRACTION_USER_RECURRENCE_RULES,
     EXTRACTION_USER_V1,
 )
 from app.pipeline.state import PipelineState
@@ -76,6 +79,8 @@ def _merge_task_items(base: dict, incoming: dict) -> dict:
         merged["confidence"] = incoming.get("confidence")
     if not merged.get("evidence_quote") and isinstance(incoming.get("evidence_quote"), str):
         merged["evidence_quote"] = incoming.get("evidence_quote")
+    if not merged.get("recurrence_rule") and isinstance(incoming.get("recurrence_rule"), str):
+        merged["recurrence_rule"] = incoming.get("recurrence_rule")
     return merged
 
 
@@ -145,6 +150,11 @@ def parse_extraction_response(raw: str) -> list[dict]:
         if not _validate_extraction_item(item):
             continue
         eq = item.get("evidence_quote")
+        # Phase 6.6 (2026-06-03): recurrence_rule is an optional LLM field
+        # emitted only by the recurrence variant. Pass through as-is here —
+        # normalize_tasks validates against the whitelist and routes to
+        # recurrence_suggested. Pre-variant runs (LLM never emits) get None.
+        rr = item.get("recurrence_rule")
         cleaned.append(
             {
                 "title": item.get("title"),
@@ -157,6 +167,7 @@ def parse_extraction_response(raw: str) -> list[dict]:
                 "confidence": item.get("confidence"),
                 "uncertainty": item.get("uncertainty") if isinstance(item.get("uncertainty"), dict) else None,
                 "evidence_quote": eq if isinstance(eq, str) else None,
+                "recurrence_rule": rr if isinstance(rr, str) and rr.strip() else None,
             }
         )
     return cleaned
@@ -250,6 +261,28 @@ def _merge_extracted_tasks(chunks_results: list[list[dict]]) -> list[dict]:
     return merged
 
 
+def _recurrence_variant_enabled() -> bool:
+    """Phase 6.6 (2026-06-03/2026-06-05): variant routing flag.
+
+    The 50-sample eval gate on 2026-06-04 (Cerebras strict, gpt-oss-120b)
+    showed v2 of the variant prompt passes both gate criteria:
+      - Fully Correct 92.0% ≥ 87.2% baseline gate
+      - No per-field F1 regression > 2% (Title/Assignee/Conflict actually
+        improved; Deadline -1.78%, within tolerance)
+      - 0 false-positive recurrence emissions on the 50 baseline samples
+        (none of which contained recurring patterns)
+
+    Default flipped to variant ON. Opt-out via ``TASKBOT_EXTRACTION_VARIANT=v1``
+    preserved so the legacy baseline is still callable for regression
+    bisection and the thesis full-250 eval rerun.
+    """
+    val = str(os.environ.get("TASKBOT_EXTRACTION_VARIANT") or "").lower()
+    if val == "v1":
+        return False
+    # Default + any "recurrence"/"on"/"true" value → variant on.
+    return True
+
+
 def _build_extraction_prompt(
     state: PipelineState, text: str, with_retry_hint: bool = False
 ) -> tuple[str, str]:
@@ -270,12 +303,28 @@ def _build_extraction_prompt(
     # ``metadata.folder`` says so. Default remains the inbox/V1 prompt for
     # every other source — Drive, uploads, and inbox-gmail are all
     # received-by-the-user contexts where the V1 assignee-default applies.
-    system_prompt = (
-        EXTRACTION_SYSTEM_SENT
-        if str(metadata.get("folder") or "").lower() == "sent"
-        else EXTRACTION_SYSTEM_V1
-    )
+    is_sent = str(metadata.get("folder") or "").lower() == "sent"
+    # Phase 6.6 (2026-06-03): recurrence variant applies only to non-sent
+    # paths. Sent-folder mail (Anna delegating outbound work) is overwhelmingly
+    # one-shot delegation, not personal recurring schedules — adding the
+    # recurrence guidance there would dilute the SENT-specific assignee rules.
+    use_recurrence_variant = (not is_sent) and _recurrence_variant_enabled()
+    if is_sent:
+        system_prompt = EXTRACTION_SYSTEM_SENT
+    elif use_recurrence_variant:
+        system_prompt = EXTRACTION_SYSTEM_RECURRENCE
+    else:
+        system_prompt = EXTRACTION_SYSTEM_V1
     user_prompt = prompt_body
+    if use_recurrence_variant:
+        # Insert as a rules section right before the Text block — positioning
+        # it after the schema closer caused the LLM to ignore the directive
+        # in early dogfood. "Text (source data" is a unique marker in V1.
+        marker = "Text (source data;"
+        if marker in user_prompt:
+            user_prompt = user_prompt.replace(
+                marker, EXTRACTION_USER_RECURRENCE_RULES + marker, 1
+            )
     if with_retry_hint:
         user_prompt = user_prompt + "\n\n" + EXTRACTION_RETRY_HINT_V1
     return system_prompt, user_prompt

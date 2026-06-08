@@ -10,6 +10,20 @@ from starlette.responses import JSONResponse
 RATE_LIMIT = 60
 WINDOW_SECONDS = 60
 
+# Exact-path exemptions: framework endpoints + cheap read-only polling that the
+# Sync page hits every 2s (status + progress). Without these, an open Sync tab
+# during an active sync burns the 60/min budget in ~40s and the user sees the
+# UI flood with 429s even though the sync itself is fine. The polling endpoints
+# are O(1) Redis lookups with no LLM/DB cost — the frontend's setInterval
+# already self-throttles to 2s, which is the real ceiling.
+_EXEMPT_PATHS = frozenset({
+    "/health",
+    "/docs",
+    "/openapi.json",
+    "/sync/status",
+    "/sync/progress",
+})
+
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Sliding-window rate limiter keyed by JWT sub (or remote IP for unauthenticated)."""
@@ -38,7 +52,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return f"ip:{request.client.host if request.client else 'unknown'}"
 
     async def dispatch(self, request: Request, call_next):
-        if request.url.path in ("/health", "/docs", "/openapi.json"):
+        if request.url.path in _EXEMPT_PATHS:
             return await call_next(request)
 
         key = self._key(request)

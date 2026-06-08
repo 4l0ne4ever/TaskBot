@@ -6,6 +6,8 @@ import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { api } from "@/lib/api";
 import { HighlightExcerpt } from "@/components/ui/HighlightExcerpt";
+import { RecurrenceBadge, formatRecurrence } from "@/components/tasks/RecurrenceBadge";
+import { RecurrencePicker } from "@/components/tasks/RecurrencePicker";
 import type { Task, TaskSource } from "@/lib/types";
 import { emitTasksChanged } from "@/lib/usePendingReviewCount";
 
@@ -103,6 +105,52 @@ export default function TaskDetailPage() {
       // no source available — keep open but show fallback
     } finally {
       setSourceLoading(false);
+    }
+  }
+
+  // Phase 6.6 (recurring events, 2026-06-03): handlers for the LLM-suggest
+  // / user-confirm flow. ``saveRecurrence`` confirms with a warning when an
+  // active rule is changing (Option B from the design review) — the change
+  // applies to all future occurrences in Google Calendar, so a silent edit
+  // would surprise the user.
+  async function saveRecurrence(newRule: string | null) {
+    if (!task) return;
+    const hadActive = Boolean(task.recurrence_rule);
+    const cleared = hadActive && newRule === null;
+    if (hadActive) {
+      const msg = cleared
+        ? "Bỏ lặp lại: lịch sẽ chuyển về sự kiện một lần ở lần xảy ra tiếp theo. Tiếp tục?"
+        : `Cập nhật lặp lại sẽ áp dụng cho tất cả lần xảy ra trong tương lai. Tiếp tục?`;
+      if (!confirm(msg)) return;
+    }
+    try {
+      await api.tasks.update(task.id, { recurrence_rule: newRule ?? "" });
+      toast.success(newRule ? "Đã lưu lặp lại" : "Đã bỏ lặp lại");
+      void load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
+    }
+  }
+
+  async function applySuggestedRecurrence() {
+    if (!task || !task.recurrence_suggested) return;
+    try {
+      await api.tasks.update(task.id, { recurrence_rule: task.recurrence_suggested });
+      toast.success("Đã áp dụng lặp lại");
+      void load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Apply failed");
+    }
+  }
+
+  async function dismissSuggestedRecurrence() {
+    if (!task) return;
+    try {
+      await api.tasks.update(task.id, { dismiss_recurrence_suggestion: true });
+      toast.success("Đã bỏ qua gợi ý");
+      void load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Dismiss failed");
     }
   }
 
@@ -212,6 +260,53 @@ export default function TaskDetailPage() {
             <span className="text-xs text-amber-500 dark:text-amber-200">{(task.missing_fields ?? []).join(", ")}</span>
           </div>
         )}
+
+        {/* Phase 6.6 (recurring events): show LLM-suggested rule with
+            single-click apply/dismiss when present, then the active
+            recurrence (badge + editor). Suggested only renders when
+            the user hasn't already dismissed it. */}
+        <div className="space-y-3 pt-2 border-t border-[var(--border)]">
+          <label className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+            Lặp lại
+          </label>
+
+          {task.recurrence_suggested && !task.recurrence_rule && !task.recurrence_dismissed_at && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <span>
+                💡 Gợi ý từ nội dung: <span className="font-medium">{formatRecurrence(task.recurrence_suggested)}</span>
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => void applySuggestedRecurrence()}
+                  className="rounded border border-amber-500 bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-900 hover:bg-amber-200"
+                >
+                  Áp dụng
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void dismissSuggestedRecurrence()}
+                  className="rounded border border-[var(--border)] px-2.5 py-1 text-xs text-[var(--muted)] hover:bg-[var(--card-hover)]"
+                >
+                  Bỏ qua
+                </button>
+              </div>
+            </div>
+          )}
+
+          {task.recurrence_rule && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[var(--muted)]">Hiện tại:</span>
+              <RecurrenceBadge rule={task.recurrence_rule} />
+            </div>
+          )}
+
+          <RecurrencePicker
+            value={task.recurrence_rule}
+            onChange={(rule) => void saveRecurrence(rule)}
+            deadline={task.deadline}
+          />
+        </div>
 
         {task.source_doc_id && (
           <div className="border-t border-[var(--border)] pt-4 space-y-3">

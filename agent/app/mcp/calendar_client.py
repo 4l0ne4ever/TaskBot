@@ -114,6 +114,18 @@ class CalendarMCPClient:
 
     # ── public API (signatures preserved from the MCP-era client) ───────────
 
+    @staticmethod
+    def _maybe_attach_recurrence(body: dict[str, Any], recurrence_rule: str | None) -> dict[str, Any]:
+        """Phase 6.6 (2026-06-03): inject ``recurrence`` array when an RRULE is
+        provided. Google Calendar expects a list of RFC 5545 lines — for a
+        single rule that is ``[f"RRULE:{rule}"]``. The rule must NOT include
+        the ``RRULE:`` prefix in TaskBot's stored field; we prepend it here.
+        """
+        if recurrence_rule:
+            body = dict(body)
+            body["recurrence"] = [f"RRULE:{recurrence_rule}"]
+        return body
+
     async def create_event(
         self,
         *,
@@ -121,15 +133,19 @@ class CalendarMCPClient:
         date_iso: str,
         description: str | None = None,
         time_str: str | None = None,
+        recurrence_rule: str | None = None,
     ) -> dict[str, Any]:
         """POST a new event. Timed (``time_str`` set) or all-day (``time_str``
-        None — pre-Round-13 behaviour exactly preserved). Returns
+        None — pre-Round-13 behaviour exactly preserved). When
+        ``recurrence_rule`` is provided (Phase 6.6), the event is created as
+        a recurring series with that RRULE. Returns
         ``{"event_id": <google-event-id>}``."""
         body = (
             self._timed_body(title=title, date_iso=date_iso, time_str=time_str, description=description)
             if time_str
             else self._all_day_body(title=title, date_iso=date_iso, description=description)
         )
+        body = self._maybe_attach_recurrence(body, recurrence_rule)
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             resp = await client.post(_CALENDAR_EVENTS_URL, headers=self._headers(), json=body)
         self._raise_for_status(resp, "create_event")
@@ -145,14 +161,23 @@ class CalendarMCPClient:
         date_iso: str,
         description: str | None = None,
         time_str: str | None = None,
+        recurrence_rule: str | None = None,
     ) -> dict[str, Any]:
-        """PATCH an existing event (idempotent). Timed or all-day per ``time_str``.
+        """PATCH an existing event (idempotent). Timed or all-day per
+        ``time_str``. When ``recurrence_rule`` changes between calls, Google
+        propagates the new RRULE to all future occurrences (existing past
+        occurrences keep their original RRULE). Pass ``recurrence_rule=None``
+        with a recurring event to clear the recurrence — the PATCH body
+        omits the ``recurrence`` key and Google retains the prior value, so
+        use ``delete_event`` + ``create_event`` for the remove-recurrence
+        flow (the frontend Remove-recurrence path follows this contract).
         Returns ``{"event_id": ...}``."""
         body = (
             self._timed_body(title=title, date_iso=date_iso, time_str=time_str, description=description)
             if time_str
             else self._all_day_body(title=title, date_iso=date_iso, description=description)
         )
+        body = self._maybe_attach_recurrence(body, recurrence_rule)
         url = f"{_CALENDAR_EVENTS_URL}/{event_id}"
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             resp = await client.patch(url, headers=self._headers(), json=body)
@@ -161,3 +186,15 @@ class CalendarMCPClient:
         # Google preserves ``id`` on PATCH; fall back to the passed event_id
         # just in case the response shape varies.
         return {"event_id": data.get("id") or event_id, "raw": data}
+
+    async def delete_event(self, *, event_id: str) -> None:
+        """DELETE an event by id. Used by the Remove-recurrence flow
+        (Phase 6.6) before recreating as a single event at the next
+        occurrence date. Idempotent — Google returns 410 GONE when the event
+        was already deleted, which we treat as success."""
+        url = f"{_CALENDAR_EVENTS_URL}/{event_id}"
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            resp = await client.delete(url, headers=self._headers())
+        if resp.status_code in (200, 204, 410):
+            return
+        self._raise_for_status(resp, "delete_event")

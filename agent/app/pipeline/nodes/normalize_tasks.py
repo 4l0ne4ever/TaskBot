@@ -1,6 +1,7 @@
 import re
 from datetime import date, time
 
+from app.pipeline.recurrence import RecurrenceError, validate_rrule
 from app.pipeline.state import PipelineState
 from app.pipeline.temporal_resolve import enrich_deadline_v2_with_symbolic_iso, parse_anchor_date
 from app.services.assignee_resolver import AssigneeResolver, get_default_resolver
@@ -309,6 +310,19 @@ def _normalize_task(item: dict, anchor: date | None, source_text: str | None = N
     deadline_time = _extract_time_of_day(dl_phrase) if isinstance(dl_phrase, str) else None
     eq = item.get("evidence_quote")
     evidence_quote = eq.strip() if isinstance(eq, str) and eq.strip() else None
+    # Phase 6.6 (2026-06-03): the LLM emits ``recurrence_rule`` when it
+    # detects a recurring pattern in the text. Pipeline policy is suggest
+    # (not auto-apply) — we vet it through the whitelist and surface it as
+    # ``recurrence_suggested`` so the UI can show an "Apply" button. A
+    # malformed RRULE drops the field (graceful degradation) rather than
+    # rejecting the whole task — we still extracted a valid title.
+    recurrence_suggested: str | None = None
+    raw_recurrence = item.get("recurrence_rule")
+    if isinstance(raw_recurrence, str) and raw_recurrence.strip():
+        try:
+            recurrence_suggested = validate_rrule(raw_recurrence)
+        except RecurrenceError:
+            recurrence_suggested = None
     return {
         "title": sanitized_title,
         "description": item.get("description") if isinstance(item.get("description"), str) else None,
@@ -321,6 +335,7 @@ def _normalize_task(item: dict, anchor: date | None, source_text: str | None = N
         "confidence": confidence,
         "uncertainty": _normalize_uncertainty(item.get("uncertainty")),
         "evidence_quote": evidence_quote,
+        "recurrence_suggested": recurrence_suggested,
     }
 
 

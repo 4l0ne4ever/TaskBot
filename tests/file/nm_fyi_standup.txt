@@ -1,0 +1,11 @@
+Weekly stand-up notes — FYI only
+
+Team,
+
+Quick recap from today:
+- Staging deploy completed without issues.
+- Design review moved to next week (no action items from this email).
+
+Recording will be posted in the shared drive. No reply needed.
+
+— PMO

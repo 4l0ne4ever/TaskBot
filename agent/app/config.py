@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     cerebras_api_key: str | None = None
     cerebras_model: str = "gpt-oss-120b"
     cerebras_base_url: str = "https://api.cerebras.ai/v1"
+    # Per-call HTTP timeout for the Cerebras client. The OpenAI SDK defaults
+    # to 600s, which lets a half-open socket (e.g. laptop sleeping mid-eval)
+    # tie up the worker for ten minutes per stalled call before the SDK gives
+    # up — observed on a 2026-06-05 eval run that hung 10h at 0% CPU after
+    # the laptop slept overnight. 60s is well above gpt-oss-120b's observed
+    # P95 latency (~3-8s) while still failing fast on dead connections.
+    cerebras_http_timeout_seconds: float = 60.0
     gemini_api_key: str | None = Field(
         default=None,
         validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY"),
@@ -98,6 +105,15 @@ class Settings(BaseSettings):
     llm_pressure_requeue_max_retries: int = 3
     extract_merge_jaccard_threshold: float = 0.75
     task_reuse_similarity_threshold: float = 0.85
+    # 2026-06-07 cross-thread dedup threshold — applies when an extracted
+    # task has no in-thread reuse candidate and the pipeline searches the
+    # user's recent active tasks across other Gmail threads. Stricter than
+    # ``task_reuse_similarity_threshold`` to avoid false-merging neighbours
+    # like "Submit Q1 report" (sim 0.9375) vs "Submit Q2 report" whose
+    # titles diverge by one token but are distinct deliverables. All real
+    # cross-thread duplicates observed in production carried identical
+    # titles (sim 1.0), so 0.94 catches them all while rejecting Q1/Q2.
+    cross_thread_dedup_threshold: float = 0.94
     conflict_title_similarity_threshold: float = 0.7
     # Phase 2.2 — multi-source (cross-platform) conflict detection thresholds.
     # Decoupled from the intra-batch threshold above because cross-document
