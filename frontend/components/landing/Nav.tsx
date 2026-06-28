@@ -20,14 +20,6 @@ export function Nav({ user, loading }: { user: { email: string } | null; loading
           <a href="#how" className="hover:text-[var(--foreground)] transition-colors">
             How it works
           </a>
-          <a
-            href="https://github.com/4l0ne4ever"
-            target="_blank"
-            rel="noopener"
-            className="hover:text-[var(--foreground)] transition-colors"
-          >
-            Thesis
-          </a>
         </nav>
         <div className="flex items-center gap-2">
           {loading ? (

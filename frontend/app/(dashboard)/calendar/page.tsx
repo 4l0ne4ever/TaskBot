@@ -17,6 +17,7 @@ import {
   startOfMonth,
   statusIcon,
 } from "@/components/calendar/calendar-helpers";
+import { expandRecurrence } from "@/lib/rrule";
 
 // Priority ordering for the "Needs deadline" sidebar. Tasks with a manual
 // urgency signal float to the top; null priority sinks. Inside a tier the
@@ -51,6 +52,20 @@ export default function CalendarPage() {
   const [modalEvent, setModalEvent] = useState<CalendarEvent | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(fmt(new Date()));
   const [noDeadlineTasks, setNoDeadlineTasks] = useState<Task[]>([]);
+  const [resyncing, setResyncing] = useState(false);
+
+  async function handleResyncAll() {
+    if (!confirm("Re-sync all confirmed tasks to Google Calendar? Existing events are updated in place — no duplicates.")) return;
+    setResyncing(true);
+    try {
+      const { queued } = await api.calendar.resyncAll();
+      toast.success(queued === 0 ? "Nothing to sync" : `Queued ${queued} task${queued === 1 ? "" : "s"} for re-sync`);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Re-sync failed");
+    } finally {
+      setResyncing(false);
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,14 +103,25 @@ export default function CalendarPage() {
   }, [loadNoDeadline]);
 
   const eventsByDate = useMemo(() => {
+    // Expand recurring events into one chip per occurrence inside the
+    // visible month. Non-recurring events emit a single chip on the
+    // anchor date (the original behaviour). Without this, a weekly
+    // recurring task only shows on its anchor day, contradicting the
+    // promise of the recurrence setting.
     const map: Record<string, CalendarEvent[]> = {};
+    const rangeStart = fmt(startOfMonth(current));
+    const rangeEnd = fmt(endOfMonth(current));
     for (const ev of events) {
-      if (ev.deadline) {
-        (map[ev.deadline] ??= []).push(ev);
+      if (!ev.deadline) continue;
+      const dates = ev.recurrence_rule
+        ? expandRecurrence(ev.recurrence_rule, ev.deadline, rangeStart, rangeEnd)
+        : (ev.deadline >= rangeStart && ev.deadline <= rangeEnd ? [ev.deadline] : []);
+      for (const d of dates) {
+        (map[d] ??= []).push(ev);
       }
     }
     return map;
-  }, [events]);
+  }, [events, current]);
 
   const calendarDays = useMemo(() => {
     const start = startOfMonth(current);
@@ -225,6 +251,24 @@ export default function CalendarPage() {
           </button>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void handleResyncAll()}
+            disabled={resyncing}
+            title="Re-sync every confirmed task to Google Calendar. Uses the task's stored calendar_event_id to UPDATE existing events, so this is idempotent and won't create duplicates."
+            className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-4 py-2 text-sm hover:bg-[var(--card-hover)] transition-colors disabled:opacity-50"
+          >
+            <svg
+              className={cn("w-4 h-4", resyncing && "animate-spin")}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {resyncing ? "Syncing…" : "Sync now"}
+          </button>
           <a
             href={`https://calendar.google.com/calendar/u/0/r/day/${selectedDateForGoogle}`}
             target="_blank"

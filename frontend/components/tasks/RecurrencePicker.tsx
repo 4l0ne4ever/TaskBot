@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { RecurrenceBadge, formatRecurrence } from "./RecurrenceBadge";
+import { DatePickerPopover } from "@/components/ui/DatePickerPopover";
 
 // Phase 6.6 (recurring events, 2026-06-03): pattern-builder UI for RFC 5545
 // RRULE. Four presets (None / Daily / Weekly / Monthly) cover ~95% of cases
@@ -16,14 +17,14 @@ import { RecurrenceBadge, formatRecurrence } from "./RecurrenceBadge";
 
 type Mode = "none" | "daily" | "weekly" | "monthly" | "custom";
 
-const WEEKDAYS: { code: string; vn: string }[] = [
-  { code: "MO", vn: "T2" },
-  { code: "TU", vn: "T3" },
-  { code: "WE", vn: "T4" },
-  { code: "TH", vn: "T5" },
-  { code: "FR", vn: "T6" },
-  { code: "SA", vn: "T7" },
-  { code: "SU", vn: "CN" },
+const WEEKDAYS: { code: string; label: string }[] = [
+  { code: "MO", label: "Mon" },
+  { code: "TU", label: "Tue" },
+  { code: "WE", label: "Wed" },
+  { code: "TH", label: "Thu" },
+  { code: "FR", label: "Fri" },
+  { code: "SA", label: "Sat" },
+  { code: "SU", label: "Sun" },
 ];
 
 function rfcUntil(yyyyMmDd: string | null): string | null {
@@ -192,13 +193,25 @@ export function RecurrencePicker({
 
   return (
     <div className="space-y-3 rounded border border-[var(--border)] bg-[var(--surface)] p-3 text-sm">
+      {/* The recurrence series anchors to the task's deadline — making this
+          explicit prevents the "where does it start?" question. Without a
+          deadline set, recurrence still saves but the calendar event is not
+          dispatched until a deadline exists (see dispatch_notifications). */}
+      <div className="rounded border border-[var(--border)]/60 bg-[var(--bg)] px-2.5 py-1.5 text-[11px] text-[var(--muted)]">
+        Starts on:{" "}
+        <span className="font-medium text-[var(--foreground)]">
+          {deadline ? new Date(deadline + "T00:00:00").toLocaleDateString("en-GB") : "— set a deadline first —"}
+        </span>
+        <span className="ml-1.5 text-[var(--muted)]">(taken from the task deadline)</span>
+      </div>
+
       <div className="flex flex-wrap gap-x-4 gap-y-1">
         {([
-          ["none", "Không lặp"],
-          ["daily", "Hằng ngày"],
-          ["weekly", "Hằng tuần"],
-          ["monthly", "Hằng tháng"],
-          ["custom", "Tùy chỉnh"],
+          ["none", "No repeat"],
+          ["daily", "Daily"],
+          ["weekly", "Weekly"],
+          ["monthly", "Monthly"],
+          ["custom", "Custom"],
         ] as [Mode, string][]).map(([m, label]) => (
           <label key={m} className="inline-flex items-center gap-1.5">
             <input
@@ -225,7 +238,7 @@ export function RecurrencePicker({
                   : "border-[var(--border)] text-[var(--muted)]"
               }`}
             >
-              {d.vn}
+              {d.label}
             </button>
           ))}
         </div>
@@ -233,7 +246,7 @@ export function RecurrencePicker({
 
       {mode === "monthly" && (
         <div className="flex items-center gap-2">
-          <span className="text-[var(--muted)]">Ngày trong tháng:</span>
+          <span className="text-[var(--muted)]">Day of month:</span>
           <input
             type="number"
             min={1}
@@ -248,18 +261,18 @@ export function RecurrencePicker({
       {mode === "custom" && (
         <div className="space-y-2 rounded bg-[var(--bg)] p-2">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[var(--muted)]">Tần suất:</span>
+            <span className="text-[var(--muted)]">Frequency:</span>
             <select
               value={customFreq}
               onChange={(e) => setCustomFreq(e.target.value)}
               className="rounded border border-[var(--border)] bg-transparent px-2 py-1 text-sm"
             >
-              <option value="DAILY">Ngày</option>
-              <option value="WEEKLY">Tuần</option>
-              <option value="MONTHLY">Tháng</option>
-              <option value="YEARLY">Năm</option>
+              <option value="DAILY">Day</option>
+              <option value="WEEKLY">Week</option>
+              <option value="MONTHLY">Month</option>
+              <option value="YEARLY">Year</option>
             </select>
-            <span className="text-[var(--muted)]">mỗi</span>
+            <span className="text-[var(--muted)]">every</span>
             <input
               type="number"
               min={1}
@@ -282,14 +295,14 @@ export function RecurrencePicker({
                       : "border-[var(--border)] text-[var(--muted)]"
                   }`}
                 >
-                  {d.vn}
+                  {d.label}
                 </button>
               ))}
             </div>
           )}
           {customFreq === "MONTHLY" && (
             <div className="flex items-center gap-2">
-              <span className="text-[var(--muted)]">Hoặc ngày trong tháng:</span>
+              <span className="text-[var(--muted)]">Or day of month:</span>
               <input
                 type="number"
                 min={1}
@@ -306,20 +319,21 @@ export function RecurrencePicker({
 
       {mode !== "none" && (
         <div className="flex items-center gap-2">
-          <span className="text-[var(--muted)]">Kết thúc vào:</span>
+          <span className="text-[var(--muted)]">Ends on:</span>
           <input
             type="date"
             value={until}
             onChange={(e) => setUntil(e.target.value)}
             className="rounded border border-[var(--border)] bg-transparent px-2 py-1 text-sm"
           />
+          <DatePickerPopover value={until} onChange={setUntil} minDate={deadline ?? undefined} />
           {until && (
             <button
               type="button"
               onClick={() => setUntil("")}
               className="text-[11px] text-[var(--muted)] underline"
             >
-              xóa
+              clear
             </button>
           )}
         </div>
@@ -329,10 +343,10 @@ export function RecurrencePicker({
         <div className="text-[11px] text-[var(--muted)]">
           {composed ? (
             <>
-              Xem trước: <RecurrenceBadge rule={composed} />
+              Preview: <RecurrenceBadge rule={composed} />
             </>
           ) : (
-            "Không có lặp lại"
+            "No recurrence"
           )}
         </div>
         <div className="flex gap-2">
@@ -341,7 +355,7 @@ export function RecurrencePicker({
             onClick={() => onChange(composed)}
             className="rounded border border-indigo-500 bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-700"
           >
-            Lưu
+            Save
           </button>
         </div>
       </div>

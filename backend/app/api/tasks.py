@@ -200,7 +200,12 @@ def _apply_task_list_filters(
         # deadline so a no-deadline task survives the past-due comparison.
         not_done = Task.progress_state.is_distinct_from("done")
         not_past_due = ~is_past_due_confirmed
-        stmt = stmt.where(not_done & not_past_due)
+        # Dismissed tasks are the user saying "this isn't real work" — hiding
+        # them from the active view keeps the list focused on work that still
+        # needs attention. An explicit status="dismissed" filter (or the
+        # Revert action on the dismissed row) is still the way back.
+        not_dismissed = Task.status != "dismissed"
+        stmt = stmt.where(not_done & not_past_due & not_dismissed)
     if source:
         stmt = stmt.join(SourceDocument, Task.source_doc_id == SourceDocument.id).where(
             SourceDocument.source_type == source
@@ -487,12 +492,23 @@ async def update_task(
     # Phase 6.6: also enqueue when recurrence_rule changed on an already-
     # confirmed task — dispatch propagates the new RRULE (or clears it as a
     # single event when the remove-recurrence flow ran above).
+    # 2026-06-28: deadline / deadline_time change on a confirmed task also
+    # triggers dispatch — without this, the user moves a deadline in the UI
+    # but the Google Calendar event stays anchored to the old date until
+    # the next manual confirm cycle. The web /calendar view picks up the
+    # change immediately (it reads ``task.deadline`` directly), so the gap
+    # only shows in Google Calendar — easy to miss, hence the silent drift.
     recurrence_changed = (
         "recurrence_rule" in changes and task.status == "confirmed" and task.deadline is not None
     )
+    deadline_changed_on_confirmed = (
+        any(k in changes for k in ("deadline", "deadline_time"))
+        and task.status == "confirmed"
+        and task.deadline is not None
+    )
     need_calendar = (
         changes.get("status") == "confirmed" and task.deadline is not None
-    ) or recurrence_changed
+    ) or recurrence_changed or deadline_changed_on_confirmed
     access_token: str | None = None
     if need_calendar:
         from app.api.conflicts import _build_calendar_resync_payload

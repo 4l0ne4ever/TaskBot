@@ -244,6 +244,8 @@ export const api = {
     update: (id: string, data: Partial<Pick<CalendarEvent, "title" | "assignee" | "deadline" | "priority" | "status">>) =>
       apiFetch<CalendarEvent>(`/calendar/events/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     delete: (id: string) => apiFetch<{ deleted: string }>(`/calendar/events/${id}`, { method: "DELETE" }),
+    resyncAll: () =>
+      apiFetch<{ queued: number }>(`/calendar/resync_all`, { method: "POST" }),
   },
   upload: {
     file: (file: File) => {

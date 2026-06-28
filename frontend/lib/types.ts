@@ -137,6 +137,11 @@ export interface CalendarEvent {
   title: string;
   assignee: string | null;
   deadline: string | null;
+  // ``deadline_time`` and ``recurrence_rule`` mirror the same fields on
+  // ``Task``. The /calendar grid uses the rule to expand recurring events
+  // into per-occurrence chips for the visible month.
+  deadline_time?: string | null;
+  recurrence_rule?: string | null;
   priority: string | null;
   status: string;
   calendar_event_id: string | null;

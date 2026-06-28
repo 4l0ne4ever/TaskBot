@@ -246,10 +246,55 @@ export default function TasksPage() {
   }
 
   async function dismissTask(id: string) {
-    applyMutationToList(id, { status: "dismissed" }, "dismissed");
+    // Hide dismissed rows from the default ("All") active view so the list
+    // stays focused on work that still needs attention. When the user has
+    // explicitly filtered to status="dismissed", keep the row visible so
+    // they can see the just-dismissed item and Revert if it was a mistake.
+    if (status === "dismissed") {
+      applyMutationToList(id, { status: "dismissed" }, "dismissed");
+    } else {
+      setTasks((prev) => {
+        if (prev.some((t) => t.id === id)) {
+          setTotal((cur) => Math.max(0, cur - 1));
+        }
+        return prev.filter((t) => t.id !== id);
+      });
+    }
     try {
       await api.tasks.update(id, { status: "dismissed" });
-      toast.success("Dismissed");
+      toast.success("Dismissed", {
+        // 8-second window mirrors common email "Undo" patterns — enough
+        // time to catch a misclick, short enough not to clutter the UI.
+        duration: 8000,
+        id: `dismiss-${id}`,
+      });
+      // Show an Undo affordance via a follow-up custom toast. react-hot-toast
+      // doesn't support action buttons on success(), so we render a second
+      // toast with the button — same id so dismissing one dismisses both.
+      toast(
+        (tt) => (
+          <span className="flex items-center gap-3">
+            <span>Task dismissed.</span>
+            <button
+              type="button"
+              onClick={() => {
+                // Revert in backend, then refresh the page so the row
+                // reappears in the active list. Without ``load`` the
+                // visual recovery only happens on the next manual reload.
+                void (async () => {
+                  await revertTask(id);
+                  void load(page);
+                })();
+                toast.dismiss(tt.id);
+              }}
+              className="rounded border border-[var(--border)] px-2 py-0.5 text-xs font-medium hover:bg-[var(--card-hover)]"
+            >
+              Undo
+            </button>
+          </span>
+        ),
+        { duration: 8000, id: `dismiss-undo-${id}` },
+      );
       emitTasksChanged();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Update failed");
@@ -331,7 +376,7 @@ export default function TasksPage() {
           </svg>
           <div className="flex-1">
             <p className="font-medium text-red-600 dark:text-red-300">
-              {highNoDeadlineCount} high-priority task{highNoDeadlineCount === 1 ? "" : "s"} chưa có deadline
+              {highNoDeadlineCount} high-priority task{highNoDeadlineCount === 1 ? "" : "s"} without a deadline
             </p>
             <p className="mt-0.5 text-xs text-[var(--muted)]">
               High-priority work without a deadline doesn&apos;t land on the calendar. Pick a date so the team knows when it&apos;s due.
@@ -425,7 +470,7 @@ export default function TasksPage() {
 
         <label
           className="flex items-center gap-2 self-end pb-2 cursor-pointer select-none"
-          title="Bật để xem RIÊNG task đã xong (progress=done) hoặc đã qua deadline & confirmed. Tắt: chỉ xem active list. Pending overdue luôn ở active."
+          title="ON: show ONLY completed tasks (progress=done) or past-deadline confirmed tasks. OFF: show only the active list. Pending-overdue tasks always stay in the active list."
         >
           <input
             type="checkbox"
@@ -532,7 +577,7 @@ export default function TasksPage() {
                           title={
                             t.progress_state === "done"
                               ? "Marked done in /tracking"
-                              : "Confirmed, deadline đã qua"
+                              : "Confirmed, deadline has passed"
                           }
                         >
                           Completed
@@ -655,6 +700,24 @@ export default function TasksPage() {
                                 ? "Auto-confirmed — revert to pending for manual review"
                                 : "Revert your confirmation back to pending"
                             }
+                          >
+                            Revert
+                          </button>
+                        </div>
+                      ) : t.status === "dismissed" ? (
+                        <div className="flex items-center gap-2 justify-end">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider rounded-full px-2 py-0.5 bg-gray-500/15 text-gray-500 dark:text-gray-400">
+                            dismissed
+                          </span>
+                          {/* Mirror the Confirmed-row Revert affordance —
+                              a misclicked Dismiss left the user with no way
+                              back from the list view. Hover-to-show keeps
+                              the dismissed bucket visually quiet. */}
+                          <button
+                            type="button"
+                            onClick={() => void revertTask(t.id)}
+                            className="text-[10px] text-[var(--muted)] hover:text-[var(--foreground)] opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Revert this dismissal back to pending"
                           >
                             Revert
                           </button>

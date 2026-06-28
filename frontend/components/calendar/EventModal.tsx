@@ -7,6 +7,7 @@ import { useState } from "react";
 import toast from "react-hot-toast";
 import { api } from "@/lib/api";
 import type { CalendarEvent } from "@/lib/types";
+import { DatePickerPopover } from "@/components/ui/DatePickerPopover";
 
 interface EventModalProps {
   event: CalendarEvent | null;
@@ -80,12 +81,15 @@ export function EventModal({ event, date, onClose, onSave }: EventModalProps) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-[var(--muted)] mb-1">Deadline</label>
-              <input
-                type="date"
-                value={deadline}
-                onChange={(e) => setDeadline(e.target.value)}
-                className="w-full bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
-              />
+              <div className="flex gap-1.5">
+                <input
+                  type="date"
+                  value={deadline}
+                  onChange={(e) => setDeadline(e.target.value)}
+                  className="flex-1 bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+                />
+                <DatePickerPopover value={deadline} onChange={setDeadline} />
+              </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-[var(--muted)] mb-1">Priority</label>

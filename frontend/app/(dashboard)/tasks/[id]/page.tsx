@@ -7,6 +7,7 @@ import toast from "react-hot-toast";
 import { api } from "@/lib/api";
 import { HighlightExcerpt } from "@/components/ui/HighlightExcerpt";
 import { RecurrenceBadge, formatRecurrence } from "@/components/tasks/RecurrenceBadge";
+import { DatePickerPopover } from "@/components/ui/DatePickerPopover";
 import { RecurrencePicker } from "@/components/tasks/RecurrencePicker";
 import type { Task, TaskSource } from "@/lib/types";
 import { emitTasksChanged } from "@/lib/usePendingReviewCount";
@@ -119,13 +120,13 @@ export default function TaskDetailPage() {
     const cleared = hadActive && newRule === null;
     if (hadActive) {
       const msg = cleared
-        ? "Bỏ lặp lại: lịch sẽ chuyển về sự kiện một lần ở lần xảy ra tiếp theo. Tiếp tục?"
-        : `Cập nhật lặp lại sẽ áp dụng cho tất cả lần xảy ra trong tương lai. Tiếp tục?`;
+        ? "Remove recurrence: the calendar will switch back to a single event at the next occurrence. Continue?"
+        : `Updating recurrence will apply to all future occurrences. Continue?`;
       if (!confirm(msg)) return;
     }
     try {
       await api.tasks.update(task.id, { recurrence_rule: newRule ?? "" });
-      toast.success(newRule ? "Đã lưu lặp lại" : "Đã bỏ lặp lại");
+      toast.success(newRule ? "Recurrence saved" : "Recurrence removed");
       void load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Save failed");
@@ -136,7 +137,7 @@ export default function TaskDetailPage() {
     if (!task || !task.recurrence_suggested) return;
     try {
       await api.tasks.update(task.id, { recurrence_rule: task.recurrence_suggested });
-      toast.success("Đã áp dụng lặp lại");
+      toast.success("Recurrence applied");
       void load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Apply failed");
@@ -147,7 +148,7 @@ export default function TaskDetailPage() {
     if (!task) return;
     try {
       await api.tasks.update(task.id, { dismiss_recurrence_suggestion: true });
-      toast.success("Đã bỏ qua gợi ý");
+      toast.success("Suggestion dismissed");
       void load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Dismiss failed");
@@ -226,17 +227,21 @@ export default function TaskDetailPage() {
             Deadline
           </label>
           <div className="flex gap-2 flex-wrap">
-            {/* Native HTML5 date + time pickers. ``Task.deadline`` is stored
-                as ``YYYY-MM-DD`` and ``Task.deadline_time`` as ``HH:MM:SS``
-                — exactly what these inputs consume/emit (the time input
-                wants ``HH:MM``; the save handler pads with ":00"). Either
-                field cleared independently. */}
+            {/* Native HTML5 date + time pickers, plus an explicit popover
+                calendar trigger because Safari's native ``type="date"``
+                indicator is a thin chevron that users miss — the popover
+                gives a visible grid that matches /calendar's UX. ``Task.deadline``
+                is stored as ``YYYY-MM-DD`` and ``Task.deadline_time`` as
+                ``HH:MM:SS`` — exactly what these inputs consume/emit (the
+                time input wants ``HH:MM``; the save handler pads with ":00").
+                Either field cleared independently. */}
             <input
               type="date"
               value={deadline}
               onChange={(e) => setDeadline(e.target.value)}
               className="flex-1 min-w-[10rem] bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] [color-scheme:dark]"
             />
+            <DatePickerPopover value={deadline} onChange={setDeadline} />
             <input
               type="time"
               value={deadlineTime}
@@ -267,13 +272,13 @@ export default function TaskDetailPage() {
             the user hasn't already dismissed it. */}
         <div className="space-y-3 pt-2 border-t border-[var(--border)]">
           <label className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
-            Lặp lại
+            Recurrence
           </label>
 
           {task.recurrence_suggested && !task.recurrence_rule && !task.recurrence_dismissed_at && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
               <span>
-                💡 Gợi ý từ nội dung: <span className="font-medium">{formatRecurrence(task.recurrence_suggested)}</span>
+                💡 Suggested from content: <span className="font-medium">{formatRecurrence(task.recurrence_suggested)}</span>
               </span>
               <div className="flex gap-2">
                 <button
@@ -281,14 +286,14 @@ export default function TaskDetailPage() {
                   onClick={() => void applySuggestedRecurrence()}
                   className="rounded border border-amber-500 bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-900 hover:bg-amber-200"
                 >
-                  Áp dụng
+                  Apply
                 </button>
                 <button
                   type="button"
                   onClick={() => void dismissSuggestedRecurrence()}
                   className="rounded border border-[var(--border)] px-2.5 py-1 text-xs text-[var(--muted)] hover:bg-[var(--card-hover)]"
                 >
-                  Bỏ qua
+                  Dismiss
                 </button>
               </div>
             </div>
@@ -296,7 +301,7 @@ export default function TaskDetailPage() {
 
           {task.recurrence_rule && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-[var(--muted)]">Hiện tại:</span>
+              <span className="text-xs text-[var(--muted)]">Current:</span>
               <RecurrenceBadge rule={task.recurrence_rule} />
             </div>
           )}

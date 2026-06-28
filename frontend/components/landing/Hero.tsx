@@ -20,7 +20,7 @@ export function Hero({ user, loading }: { user: { email: string } | null; loadin
       <div className="max-w-6xl mx-auto px-6 pt-20 pb-24 sm:pt-28 sm:pb-32 text-center">
         <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium border border-[var(--border)] bg-[var(--surface)]/60 text-[var(--muted)] mb-6">
           <span className="h-1.5 w-1.5 rounded-full bg-[var(--success)]" />
-          Enterprise task intelligence · HUST IT-E6 thesis
+          Enterprise task intelligence
         </span>
         <h1 className="text-4xl sm:text-6xl font-semibold tracking-tight leading-[1.05]">
           One inbox.{" "}

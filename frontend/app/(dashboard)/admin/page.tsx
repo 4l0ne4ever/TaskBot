@@ -88,8 +88,8 @@ function QualitySection() {
           </div>
 
           {/* Honest dilution note: the lifetime aggregate mixes in pre-feature
-              tasks that can never be system-confirmed. The headline thesis
-              number (90.9%) is the controlled synthetic-batch measurement. */}
+              tasks that can never be system-confirmed. The headline number
+              (90.9%) is the controlled synthetic-batch measurement. */}
           {window === undefined && (
             <div className="rounded-lg border border-[var(--warning)]/30 bg-[var(--warning)]/5 px-3 py-2 text-xs text-[var(--muted)]">
               Lifetime rate is diluted by tasks created before auto-confirm existed (they can

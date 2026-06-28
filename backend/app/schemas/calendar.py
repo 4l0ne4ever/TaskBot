@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -11,6 +11,12 @@ class CalendarEvent(BaseModel):
     title: str
     assignee: str | None
     deadline: date | None
+    # ``deadline_time`` lets the UI render timed events distinct from all-day
+    # ones; ``recurrence_rule`` lets the UI expand a recurring task into one
+    # chip per occurrence inside the visible month (mirroring Google Calendar
+    # behaviour). Both default to NULL for legacy single-day events.
+    deadline_time: time | None = None
+    recurrence_rule: str | None = None
     priority: str | None
     status: str
     calendar_event_id: str | None

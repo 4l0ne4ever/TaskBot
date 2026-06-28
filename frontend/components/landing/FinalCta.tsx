@@ -13,7 +13,7 @@ export function FinalCta({ user, loading }: { user: { email: string } | null; lo
           <span className="text-[var(--accent)]">Start finishing every task.</span>
         </h2>
         <p className="mt-4 text-[var(--muted)] leading-relaxed">
-          Free for now — built as a thesis prototype, used like a real tool.
+          Read-only by default. Set up in under two minutes.
         </p>
         <div className="mt-8 flex items-center justify-center">
           {loading ? (
